@@ -1,6 +1,6 @@
 # Plugins
 
-Current list of plugins that are available for (Whispering Tiger)[https://github.com/Sharrnah/whispering].
+Current list of plugins that are available for [Whispering Tiger](https://github.com/Sharrnah/whispering).
 
 _If you have created a plugin, please add it to this list using a pull request or let me know and I will add it._
 
