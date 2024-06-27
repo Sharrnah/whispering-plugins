@@ -4,7 +4,7 @@ Current list of plugins that are available for [Whispering Tiger](https://github
 
 _If you have created a plugin, please add it to this list using a pull request or let me know and I will add it._
 
-_See [plugin-creation.md](plugin-creation.md) for more information on how to create plugins yourself._
+_See [plugin-creation.md](Documentation/plugin-creation.md) for more information on how to create plugins yourself._
 
 ### Install
 Copy the plugin file to the `Plugins` directory in the root of the project.
