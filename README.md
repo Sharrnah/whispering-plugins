@@ -1,10 +1,12 @@
-# Plugins
+# <img src=https://github.com/Sharrnah/whispering-ui/blob/main/app-icon.png width=90> Plugins for Whispering Tiger
 
 Current list of plugins that are available for [Whispering Tiger](https://github.com/Sharrnah/whispering).
 
 _If you have created a plugin, please add it to this list using a pull request or let me know and I will add it._
 
 _See [plugin-creation.md](Documentation/plugin-creation.md) for more information on how to create plugins yourself._
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/sharrnah)
 
 ### Install
 Copy the plugin file to the `Plugins` directory in the root of the project.
