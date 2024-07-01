@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.27
+# V0.3.28
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -16,7 +16,6 @@ import time
 from importlib import util
 import importlib
 import pkgutil
-from io import BytesIO
 
 import numpy as np
 import torch
@@ -214,10 +213,6 @@ class BarkTTSPlugin(Plugins.Base):
     hubert_model = None
     hubert_tokenizer = None
     vocos = None
-
-    # split_character_goal_length = 110
-    # split_character_max_length = 170
-    # split_character_jitter = 0
 
     audio_enhancer = None
 
@@ -487,6 +482,8 @@ class BarkTTSPlugin(Plugins.Base):
         )
 
         if self.is_enabled(False):
+            model_cache_dir = Path(bark_plugin_dir / "bark_models")
+
             # disable default tts engine
             settings.SetOption("tts_enabled", False)
 
@@ -503,7 +500,14 @@ class BarkTTSPlugin(Plugins.Base):
                 torch.backends.cudnn.benchmark = True
                 torch.backends.cudnn.deterministic = False
 
-            os.environ["SUNO_OFFLOAD_CPU"] = str(self.get_plugin_setting("use_offload_cpu", True))
+            use_offload_cpu = self.get_plugin_setting("use_offload_cpu", True)
+
+            os.environ["SUNO_OFFLOAD_CPU"] = str(use_offload_cpu)
+            if self.get_plugin_setting("use_small_models", True):
+                os.environ["USE_SMALL_MODELS"] = str(self.get_plugin_setting("use_small_models", True))
+
+            os.environ["CACHE_DIR"] = str(model_cache_dir.resolve())
+
             #os.environ["SUNO_ENABLE_MPS"] = str(self.get_plugin_setting("use_mps", False))
             use_gpu = self.get_plugin_setting("use_gpu", True)
 
@@ -611,16 +615,21 @@ class BarkTTSPlugin(Plugins.Base):
             # download and load all models
             use_small_models = self.get_plugin_setting("use_small_models", True)
             print("download and load all bark models", ("small" if use_small_models else "large"))
-            self.bark_module.preload_models(
-                text_use_gpu=use_gpu,
-                text_use_small=use_small_models,
-                coarse_use_gpu=use_gpu,
-                coarse_use_small=use_small_models,
-                fine_use_gpu=use_gpu,
-                fine_use_small=use_small_models,
-                codec_use_gpu=use_gpu,
-                path=bark_plugin_dir / "bark_models",
-            )
+            if use_offload_cpu:
+                self.bark_module.load_model(
+                    model_type="text", use_gpu=use_gpu, use_small=use_small_models, force_reload=False, path=str(model_cache_dir.resolve())
+                )
+            else:
+                self.bark_module.preload_models(
+                    text_use_gpu=use_gpu,
+                    text_use_small=use_small_models,
+                    coarse_use_gpu=use_gpu,
+                    coarse_use_small=use_small_models,
+                    fine_use_gpu=use_gpu,
+                    fine_use_small=use_small_models,
+                    codec_use_gpu=use_gpu,
+                    path=str(model_cache_dir.resolve()),
+                )
 
             if use_gpu and self.get_plugin_setting("use_half_precision"):
                 self.bark_module.models_to(torch.float16)
@@ -1405,6 +1414,7 @@ class BarkTTSPlugin(Plugins.Base):
                     wav_data = base64.b64encode(wav).decode('utf-8')
                     websocket.AnswerMessage(websocket_connection,
                                             json.dumps({"type": "tts_save", "wav_data": wav_data}))
+                    del wav_data
                 else:
                     self.play_audio_on_device(wav, device_index,
                                               source_sample_rate=self.sample_rate,
@@ -1412,7 +1422,7 @@ class BarkTTSPlugin(Plugins.Base):
                                               target_channels=2,
                                               dtype="int16"
                                               )
-
+                del wav
         return
 
     def on_event_received(self, message, websocket_connection=None):

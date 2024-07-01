@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.0
+# V1.1.1
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -153,9 +153,9 @@ class RVCStsPlugin(Plugins.Base):
                                         "values": [value for key, value in CONSTANTS.items()]},
 
                 # realtime settings
-                "rt_input_device_index": {"type": "select_audio", "device_api": "mme", "device_type": "input", "value": str(settings.GetOption("device_index"))},
+                "rt_input_device_index": {"type": "select_audio", "device_api": "all", "device_type": "input", "value": str(settings.GetOption("device_index"))},
                 "rt_input_noise_reduce": False,
-                "rt_output_device_index": {"type": "select_audio", "device_api": "mme", "device_type": "output", "value": str(settings.GetOption("device_out_index"))},
+                "rt_output_device_index": {"type": "select_audio", "device_api": "all", "device_type": "output", "value": str(settings.GetOption("device_out_index"))},
                 "rt_output_noise_reduce": False,
                 "rt_threshold": {"type": "slider", "min": -60.0, "max": 0.0, "step": 1, "value": -60.0},
                 "rt_restart_btn": {"label": "start / restart / stop Realtime", "type": "button", "style": "primary"},
@@ -263,8 +263,6 @@ class RVCStsPlugin(Plugins.Base):
             # is_half = True
             is_half = self.get_plugin_setting("half_precision")
 
-            from rvc_infer import get_vc, vc_single, release_model
-
             #
             #self.gui_config = GUIConfig()
             #self.config = Config()
@@ -286,11 +284,12 @@ class RVCStsPlugin(Plugins.Base):
             #sd.default.device[1] = output_device_indices[
             #    output_devices.index(settings.GetOption("audio_output_device")[:32] + " (MME)")
             #]
+            from rvc_infer import get_vc, vc_single, release_model
 
-            self.vc_single = vc_single
-            self.release_model = release_model
-            get_vc(rvc_path, device, is_half)
-
+            if (self.get_plugin_setting("voice_change_source") != CONSTANTS["STS_RT"] and self.get_plugin_setting("voice_change_source") != CONSTANTS["DISABLED"]) and self.model_file_valid(self.get_plugin_setting("model_file")):
+                self.vc_single = vc_single
+                self.release_model = release_model
+                get_vc(rvc_path, device, is_half)
 
             #############################
             ## realtime voice conversion
@@ -305,7 +304,7 @@ class RVCStsPlugin(Plugins.Base):
                 self.rvc_for_realtime = rvc_for_realtime
                 self.TorchGate = TorchGate
                 self.tat = tat
-                if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["STS_RT"] and self.model_file_valid(self.get_plugin_setting("model_file")):
+                if self.get_plugin_setting("voice_change_source") == CONSTANTS["STS_RT"] and self.model_file_valid(self.get_plugin_setting("model_file")):
                     self.start_vc()
             except ImportError as e:
                 print("Error initializing realtime dependencies: " + str(e))
@@ -543,6 +542,10 @@ class RVCStsPlugin(Plugins.Base):
         print("starting realtime RVC...")
         input_device = int(self.get_plugin_setting("rt_input_device_index", settings.GetOption("device_index")))
         output_device = int(self.get_plugin_setting("rt_output_device_index", settings.GetOption("device_out_index")))
+
+        print("setting audio devices...")
+        print("input_device: ", input_device)
+        print("output_device: ", output_device)
 
         self.set_devices(input_device, output_device)
 
@@ -910,6 +913,13 @@ class RVCStsPlugin(Plugins.Base):
                         self.stop_vr_thread = True
                         self.thread_vc.join()
                         self.thread_vc = None
+                    else:
+                        if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") != CONSTANTS["STS_RT"] and self.get_plugin_setting("voice_change_source") == CONSTANTS["DISABLED"]:
+                            websocket.BroadcastMessage(json.dumps({"type": "info", "data": "Realtime voice change is disabled. Go to Audio Conversion -> voice_change_source\nand set to Realtime."}))
+
+                    if not self.is_enabled(False):
+                        websocket.BroadcastMessage(json.dumps({"type": "info", "data": "Plugin is disabled."}))
+                        return
 
                     if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["STS_RT"] and self.model_file_valid(self.get_plugin_setting("model_file")):
                         self.start_vc()

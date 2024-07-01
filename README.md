@@ -9,6 +9,7 @@ _See [plugin-creation.md](Documentation/plugin-creation.md) for more information
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/sharrnah)
 
 ### Install
+Use the Whispering Tiger UI Application and 
 Copy the plugin file to the `Plugins` directory in the root of the project.
 
 Consider reading the plugin file to see if there are any dependencies that need to be installed.
