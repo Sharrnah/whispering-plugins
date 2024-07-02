@@ -1,6 +1,6 @@
 # ============================================================
 # Translates Text using DeepL API - Whispering Tiger Plugin
-# Version 1.0.6
+# Version 1.0.7
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -135,13 +135,18 @@ class DeepLPlugin(Plugins.Base):
             )
             return translated_text, detected_language.lower(), to_code
 
+    def return_languages(self):
+        return tuple([{"code": code, "name": language} for code, language in LANGUAGES.items()])
+
     def on_plugin_get_languages_call(self, data_obj):
         if self.is_enabled(False):
-            data_obj['languages'] = tuple([{"code": code, "name": language} for code, language in LANGUAGES.items()])
+            data_obj['languages'] = self.return_languages()
             return data_obj
 
         return None
 
     def on_enable(self):
         self.init()
+        if self.is_enabled(False):
+            websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_languages()}))
         pass

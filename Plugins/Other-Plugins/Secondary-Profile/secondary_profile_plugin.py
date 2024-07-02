@@ -1,6 +1,6 @@
 # ============================================================
 # Load and use a second profile settings file for processing audio using Whispering Tiger
-# Version 1.0.0
+# Version 1.0.1
 #
 # See https://github.com/Sharrnah/whispering
 # ============================================================
@@ -43,7 +43,11 @@ class SecondaryProfilePlugin(Plugins.Base):
 
     active = False
 
-    pause = False
+    paused_stt = False
+    pause_lock = threading.Lock()
+    pause_event = threading.Event()
+    pause_timer = None
+    pause_end_time = None
 
     def init(self):
         # prepare all possible settings
@@ -54,7 +58,8 @@ class SecondaryProfilePlugin(Plugins.Base):
                 "vad_enabled": True,
                 "btn_start": {"label": "start", "type": "button", "style": "primary"},
                 "btn_stop": {"label": "stop", "type": "button", "style": "default"},
-                "btn_update": {"label": "Update Settings", "type": "button", "style": "default"},
+                #"btn_update": {"label": "Update Settings", "type": "button", "style": "default"},
+                "pause_time_on_main_activity": {"type": "slider", "min": 0.5, "max": 20.0, "step": 0.5, "value": 2.0},
 
                 # processing settings
                 "whisper_task": {"type": "select", "value": "transcribe", "values": ["transcribe", "translate"]},
@@ -70,12 +75,16 @@ class SecondaryProfilePlugin(Plugins.Base):
                 "osc_auto_processing_enabled": False,
             },
             settings_groups={
-                "General": ["recording_device_index", "settings_file", "vad_enabled", "btn_start", "btn_stop"],
-                "Settings": ["btn_update", "whisper_task", "stt_enabled", "osc_sending", "realtime_frequency_time"],
+                "General": ["recording_device_index", "settings_file", "vad_enabled", "btn_start", "btn_stop", "pause_time_on_main_activity"],
+                #"Settings": ["btn_update", "whisper_task", "stt_enabled", "osc_sending", "realtime_frequency_time"],
+                "Settings": ["whisper_task", "stt_enabled", "osc_sending", "realtime_frequency_time"],
                 "Websocket": ["websocket_ip", "websocket_port"],
                 "OSC": ["osc_auto_processing_enabled"],
             }
         )
+
+    def main_app_before_callback_func_for_pause(self, main_app_obj=None):
+        self.set_pause(self.get_plugin_setting("pause_time_on_main_activity"))
 
     def btn_start(self):
         self.settings = settings.SettingsManager(immutable=True)
@@ -96,25 +105,57 @@ class SecondaryProfilePlugin(Plugins.Base):
             self.websocket_server = websocket.WebSocketServer(websocket_ip, int(websocket_port), None, None, None,
                                                               debug=False)
 
+        # register callbacks to main app audio callback
+        audio_processing_recording.MAIN_APP_BEFORE_CALLBACK_FUNC_LISTS['before_recording_starts_callback_func'].append(self.main_app_before_callback_func_for_pause)
+        audio_processing_recording.MAIN_APP_BEFORE_CALLBACK_FUNC_LISTS['before_recording_running_callback_func'].append(self.main_app_before_callback_func_for_pause)
+        audio_processing_recording.MAIN_APP_BEFORE_CALLBACK_FUNC_LISTS['before_recording_send_to_queue_callback_func'].append(self.main_app_before_callback_func_for_pause)
+
+
     def update_settings(self):
         self.settings.SetOption("whisper_task", self.get_plugin_setting("whisper_task"))
-        self.settings.SetOption("stt_enabled", self.get_plugin_setting("stt_enabled"))
+        if not self.paused_stt:
+            # skip updating stt_enabled if it is paused
+            self.settings.SetOption("stt_enabled", self.get_plugin_setting("stt_enabled"))
         self.settings.SetOption("osc_auto_processing_enabled", self.get_plugin_setting("osc_sending"))
         self.settings.SetOption("whisper_task", self.get_plugin_setting("whisper_task"))
         self.settings.SetOption("realtime_frequency_time", self.get_plugin_setting("realtime_frequency_time"))
 
-    def set_pause(self, duration):
-        def pause_for_duration():
-            old_stt_value = self.get_plugin_setting("stt_enabled")
-            self.pause = True
-            if self.settings is not None:
-                self.settings.SetOption("stt_enabled", False)
-            time.sleep(duration)
-            self.pause = False
-            if self.settings is not None:
-                self.settings.SetOption("stt_enabled", old_stt_value)
+    def update_settings_in_callback(self, callback_obj=None):
+        self.update_settings()
 
-        threading.Thread(target=pause_for_duration).start()
+    def set_pause(self, duration):
+        with self.pause_lock:
+            if self.pause_timer is not None:
+                self.pause_timer.cancel()
+
+            self.pause_event.clear()
+
+            # Calculate the new pause end time
+            new_pause_end_time = time.time() + duration
+            if self.pause_end_time is None or new_pause_end_time > self.pause_end_time:
+                self.pause_end_time = new_pause_end_time
+
+            self.pause_timer = threading.Timer(duration, self._pause_resume)
+            self.pause_timer.start()
+
+            if self.settings is not None:
+                self.paused_stt = True
+                self.settings.SetOption("stt_enabled", False)
+
+    def _pause_resume(self):
+        with self.pause_lock:
+            current_time = time.time()
+            if current_time >= self.pause_end_time:
+                self.pause_event.set()
+                if self.settings is not None:
+                    self.paused_stt = False
+                    self.settings.SetOption("stt_enabled", self.get_plugin_setting("stt_enabled"))
+                self.pause_end_time = None
+            else:
+                # Set another timer to resume at the correct time
+                remaining_time = self.pause_end_time - current_time
+                self.pause_timer = threading.Timer(remaining_time, self._pause_resume)
+                self.pause_timer.start()
 
     def on_event_received(self, message, websocket_connection=None):
         if self.is_enabled(False):
@@ -204,6 +245,7 @@ class SecondaryProfilePlugin(Plugins.Base):
                 settings=self.settings,
                 typing_indicator_function=None,
                 verbose=False,
+                before_callback_called_func=self.update_settings_in_callback
             )
             self.start_audio_stream()
 
@@ -274,8 +316,8 @@ class SecondaryProfilePlugin(Plugins.Base):
     #     if self.websocket_server is not None:
     #         self.websocket_server.broadcast_message(json.dumps({"type": "processing_data", "data": "debug:: "+text}))
 
-    def sts(self, wavefiledata, sample_rate):
-        self.set_pause(2)
+    #def sts(self, wavefiledata, sample_rate):
+    #    self.set_pause(2)
 
     def custom_stt(self, text, result_obj):
         if self.is_enabled(False) and text.strip() != "" and self.active:
@@ -287,7 +329,6 @@ class SecondaryProfilePlugin(Plugins.Base):
                         plugin.stt(text, result_obj)
                     except Exception as e:
                         print(f"Error while processing plugin stt in Plugin {plugin.__class__.__name__} over {self.__class__.__name__}: " + str(e))
-
         return
 
     def custom_stt_intermediate(self, text, result_obj):
