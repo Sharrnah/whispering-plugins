@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.2
+# V1.1.3
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
