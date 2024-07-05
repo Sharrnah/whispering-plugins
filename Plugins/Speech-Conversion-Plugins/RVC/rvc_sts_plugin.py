@@ -155,7 +155,7 @@ class RVCStsPlugin(Plugins.Base):
                 # audio conversion
                 "audio_file": {"type": "file_open", "accept": ".wav", "value": ""},
                 "convert_btn": {"label": "convert audio file", "type": "button", "style": "primary"},
-                "voice_change_source": {"type": "select", "value": CONSTANTS["STS"],
+                "voice_change_source": {"type": "select", "value": CONSTANTS["DISABLED"],
                                         "values": [value for key, value in CONSTANTS.items()]},
 
                 # realtime settings
