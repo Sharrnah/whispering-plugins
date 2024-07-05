@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.1
+# V1.1.2
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -14,7 +14,6 @@ import shutil
 import threading
 import time
 import wave
-from typing import Union, BinaryIO
 
 import librosa
 import numpy as np
@@ -73,6 +72,13 @@ rvc_infer_script = {
         "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/rvc-plugin2/rvc_infer.py"
     ],
     "sha256": "652b85bdfb9d6190cf75443f00064b9f5039fce975fac0ccdbaae5fde8f8df46"
+}
+rvc_realtime_infer_script = {
+    "urls": [
+        "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/rvc-plugin/rvc_for_realtime_patched.py",
+        "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/rvc-plugin2/rvc_for_realtime_patched.py"
+    ],
+    "sha256": "c3f1bc3796f2e67b3a15aad76ba804f51da1416fbc7c6544bc01e3b3576b6ed5"
 }
 
 CONSTANTS = {
@@ -213,13 +219,19 @@ class RVCStsPlugin(Plugins.Base):
                 # rename folder
                 shutil.move(str(rvc_sts_plugin_dir / rvc_webui_dependency["zip_path"]), str(rvc_sts_plugin_dir / rvc_webui_dependency["target_path"]))
 
-                ## Fetch patched file (because of hardcoded paths)
-                #if Path(rvc_sts_plugin_dir / rvc_webui_dependency["target_path"] / "tools" / "rvc_for_realtime.py").read_text().find("## patched for Plugin !!!")!= -1:
-                #    # delete file
-                #    os.remove(str(rvc_sts_plugin_dir / rvc_webui_dependency["target_path"] / "tools" / "rvc_for_realtime.py"))
-                #    # rename file
-                #    shutil.move(str(rvc_sts_plugin_dir / rvc_webui_dependency["target_path"] / "tools" / "rvc_for_realtime_patched.py"), str(rvc_sts_plugin_dir / rvc_webui_dependency["target_path"] / "tools" / "rvc_for_realtime.py"))
+            # download realtime infer script
+            if not Path(rvc_sts_plugin_dir / "Retrieval-based-Voice-Conversion-WebUI" / "tools" / "rvc_for_realtime_patched.py").is_file() or downloader.sha256_checksum(str(Path(rvc_sts_plugin_dir / "Retrieval-based-Voice-Conversion-WebUI" / "tools" / "rvc_for_realtime_patched.py").resolve())) != rvc_realtime_infer_script["sha256"]:
+                # delete rvc_infer.py if it already exists
+                if Path(rvc_sts_plugin_dir / "Retrieval-based-Voice-Conversion-WebUI" / "tools" / "rvc_for_realtime_patched.py").is_file():
+                    os.remove(str(Path(rvc_sts_plugin_dir / "Retrieval-based-Voice-Conversion-WebUI" / "tools" / "rvc_for_realtime_patched.py").resolve()))
 
+                realtime_infer_script_url = random.choice(rvc_realtime_infer_script["urls"])
+                realtime_infer_script_target_download_dir = Path(rvc_sts_plugin_dir / "Retrieval-based-Voice-Conversion-WebUI" / "tools")
+                downloader.download_extract([realtime_infer_script_url],
+                                            str(realtime_infer_script_target_download_dir.resolve()),
+                                            rvc_realtime_infer_script["sha256"],
+                                            alt_fallback=True,
+                                            title="RVC Realtime Inference script", extract_format="none")
 
             rvc_models_path = Path(rvc_sts_plugin_dir / rvc_webui_dependency["target_path"] / "assets")
             if not Path(rvc_models_path / "hubert" / "hubert_base.pt").is_file():
