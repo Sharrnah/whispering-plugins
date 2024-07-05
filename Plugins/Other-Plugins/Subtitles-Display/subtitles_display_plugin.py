@@ -1,6 +1,6 @@
 # ============================================================
 # Subtitles Display Plugin for Whispering Tiger
-# V1.0.8
+# V1.0.9
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -26,9 +26,6 @@ class SubtitleDisplayPlugin(Plugins.Base):
     transcription_display_time = 15
     transcriptions = []
     transcription_times = None
-
-    def __init__(self):
-        super().__init__()
 
     def tkinter_thread_func(self):
         def update_transcription_text():
