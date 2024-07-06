@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.28
+# V0.3.29
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -168,9 +168,9 @@ funcy_dependency_module = {
 }
 
 bark_dependency_module = {
-    "url": "https://github.com/Sharrnah/bark-with-voice-clone/archive/de9ca6c466be358b895706f3ff6332ca8a8dcd4a.zip",
-    "sha256": "f7e5768adebd78c4eecfd384f52a8e80dcc9cf5be6e21264f16ce3ea2069a99a",
-    "path": "bark-with-voice-clone-de9ca6c466be358b895706f3ff6332ca8a8dcd4a",
+    "url": "https://github.com/Sharrnah/bark-with-voice-clone/archive/99f40108dcc6c68cbaa6a6a58a0510f714d6266c.zip",
+    "sha256": "f5e2f04306e576b00815927be4302e6833f25b6d9f38d42a295f20bdea663812",
+    "path": "bark-with-voice-clone-99f40108dcc6c68cbaa6a6a58a0510f714d6266c",
 }
 
 vocos_dependency_module = {
