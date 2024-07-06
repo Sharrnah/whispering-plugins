@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.3
+# V1.1.4
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -155,7 +155,7 @@ class RVCStsPlugin(Plugins.Base):
                 # audio conversion
                 "audio_file": {"type": "file_open", "accept": ".wav", "value": ""},
                 "convert_btn": {"label": "convert audio file", "type": "button", "style": "primary"},
-                "voice_change_source": {"type": "select", "value": CONSTANTS["DISABLED"],
+                "voice_change_source": {"type": "select", "value": CONSTANTS["STS"],
                                         "values": [value for key, value in CONSTANTS.items()]},
 
                 # realtime settings
@@ -164,6 +164,9 @@ class RVCStsPlugin(Plugins.Base):
                 "rt_output_device_index": {"type": "select_audio", "device_api": "all", "device_type": "output", "value": str(settings.GetOption("device_out_index"))},
                 "rt_output_noise_reduce": False,
                 "rt_threshold": {"type": "slider", "min": -60.0, "max": 0.0, "step": 1, "value": -60.0},
+                "rt_block_time": {"type": "slider", "min": 0.1, "max": 5.0, "step": 0.1, "value": 1.0},
+                "rt_extra_time": {"type": "slider", "min": 0.1, "max": 10.0, "step": 0.1, "value": 2.0},
+                "rt_crossfade_time": {"type": "slider", "min": 0.01, "max": 5.0, "step": 0.01, "value": 0.04},
                 "rt_restart_btn": {"label": "start / restart / stop Realtime", "type": "button", "style": "primary"},
                 "rt_restart_btn_info": {"label": "To start, set 'voice_change_source' to 'Own Voice (Realtime)'.\nThen Press the Button.\nFor settings to take effect, press it again.", "type": "label", "style": "left"},
 
@@ -182,7 +185,9 @@ class RVCStsPlugin(Plugins.Base):
             settings_groups={
                 "General": ["index_rate", "f0up_key", "f0up_key_info", "f0method", "filter_radius", "rms_mix_rate", "protect"],
                 "Audio conversion": ["voice_change_source", "audio_file", "convert_btn"],
-                "Realtime": ["rt_input_device_index", "rt_input_noise_reduce", "rt_output_device_index", "rt_output_noise_reduce", "rt_threshold", "rt_restart_btn", "rt_restart_btn_info"],
+                "Realtime": ["rt_input_device_index", "rt_input_noise_reduce", "rt_output_device_index",
+                             "rt_output_noise_reduce", "rt_threshold", "rt_restart_btn", "rt_restart_btn_info",
+                             "rt_block_time", "rt_extra_time", "rt_crossfade_time"],
                 "Model": ["model_file", "index_file", "model_load_btn", "half_precision", "device", "result_noise_filter", "unload_on_finish", "debug"],
             }
         )
@@ -586,10 +591,10 @@ class RVCStsPlugin(Plugins.Base):
         O_noise_reduce = self.get_plugin_setting("rt_output_noise_reduce", False)
 
         # config
-        self.samplerate: int = 40000
-        self.block_time: float = 1.0  # s
-        self.crossfade_time: float = 0.04
-        self.extra_time: float = 2.0
+        #self.samplerate: int = 40000
+        self.block_time: float = self.get_plugin_setting("rt_block_time", 1.0)  # s
+        self.crossfade_time: float = self.get_plugin_setting("rt_crossfade_time", 0.04)
+        self.extra_time: float = self.get_plugin_setting("rt_extra_time", 2.0)
         #self.threhold: int = -60
         self.threhold: int = int(self.get_plugin_setting("rt_threshold", -60))
 
@@ -925,6 +930,16 @@ class RVCStsPlugin(Plugins.Base):
                         self.stop_vr_thread = True
                         self.thread_vc.join()
                         self.thread_vc = None
+
+                        # wait until self.rvc is None.
+                        max_wait_time = 5  # maximum wait time in seconds
+                        start_time = time.time()
+                        while self.rvc is not None and (time.time() - start_time) < max_wait_time:
+                            time.sleep(0.1)
+                        if self.rvc is not None:
+                            print("Warning: Maximum wait time exceeded. Proceeding with realtime thread stopped.")
+                        else:
+                            print("realtime thread stopped.")
                     else:
                         if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") != CONSTANTS["STS_RT"] and self.get_plugin_setting("voice_change_source") == CONSTANTS["DISABLED"]:
                             websocket.BroadcastMessage(json.dumps({"type": "info", "data": "Realtime voice change is disabled. Go to Audio Conversion -> voice_change_source\nand set to Realtime."}))
