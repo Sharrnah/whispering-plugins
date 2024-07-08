@@ -1,6 +1,6 @@
 # ============================================================
 # Voicevox Text to Speech Plugin for Whispering Tiger
-# V1.2.5
+# V1.2.6
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -443,17 +443,25 @@ class VoicevoxTTSPlugin(Plugins.Base):
                 self.play_audio_on_device(wav, audio_device)
         return
 
-    def tts(self, text, device_index, websocket_connection=None, download=False):
+    def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         if self.is_enabled(False):
             if device_index is None or device_index == -1:
                 device_index = settings.GetOption("device_default_out_index")
 
             wav = self.generate_tts(text.strip())
             if wav is not None:
-                if download and websocket_connection is not None:
-                    wav_data = base64.b64encode(wav).decode('utf-8')
-                    websocket.AnswerMessage(websocket_connection,
-                                            json.dumps({"type": "tts_save", "wav_data": wav_data}))
+                if download:
+                    if path is not None and path != '':
+                        # write wav_data to file in path
+                        with open(path, "wb") as f:
+                            f.write(wav)
+                        websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                               "data": "File saved to: " + path}))
+                    else:
+                        if websocket_connection is not None:
+                            wav_data = base64.b64encode(wav).decode('utf-8')
+                            websocket.AnswerMessage(websocket_connection,
+                                                    json.dumps({"type": "tts_save", "wav_data": wav_data}))
                 else:
                     self.play_audio_on_device(wav, device_index)
         return
@@ -466,9 +474,6 @@ class VoicevoxTTSPlugin(Plugins.Base):
                 if message["value"] == "model_load_btn":
                     self.load_model(self.get_plugin_setting("model"))
                     pass
-
-    def timer(self):
-        pass
 
     def on_enable(self):
         self.init()

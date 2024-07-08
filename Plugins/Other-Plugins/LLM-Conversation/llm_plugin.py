@@ -1,7 +1,7 @@
 # ============================================================
 # Adds Large Language Model support to Whispering Tiger
 # answers to questions using speech to text or if using the TTS send event
-# V1.0.0
+# V1.0.1
 #
 # See https://github.com/Sharrnah/whispering
 # ============================================================
@@ -365,7 +365,7 @@ class LlmPlugin(Plugins.Base):
                 self.send_message(text, predicted_text, result_obj)
         return
 
-    def tts(self, text, device_index, websocket_connection=None, download=False):
+    def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         if self.model is not None and self.is_enabled(False):
             predicted_text = self.encode(text)
 

@@ -1,6 +1,6 @@
 # ============================================================
 # Soundboard Plugin for Whispering Tiger
-# V0.0.3
+# V0.0.4
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -184,12 +184,3 @@ class SoundboardPlugin(Plugins.Base):
     def convert_mp3_to_wav(self, mp3_path, wav_path):
         audio = AudioSegment.from_mp3(mp3_path)
         audio.export(wav_path, format="wav")
-
-    def stt(self, text, result_obj):
-        pass
-
-    def timer(self):
-        pass
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
-        pass

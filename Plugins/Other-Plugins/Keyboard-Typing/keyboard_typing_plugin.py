@@ -1,6 +1,6 @@
 # ============================================================
 # Keyboard Typing Plugin for Whispering Tiger
-# V1.0.5
+# V1.0.6
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -227,7 +227,4 @@ class KeyboardTypingPlugin(Plugins.Base):
         pass
 
     def on_disable(self):
-        pass
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
         pass

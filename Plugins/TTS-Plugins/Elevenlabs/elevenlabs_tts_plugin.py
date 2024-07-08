@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.0.11
+# V1.0.12
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -373,7 +373,7 @@ class ElevenlabsTTSPlugin(Plugins.Base):
                     self.generate_tts_streamed(text.strip())
         return
 
-    def tts(self, text, device_index, websocket_connection=None, download=False):
+    def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         streamed_playback = self.get_plugin_setting("streamed_playback")
 
         if self.is_enabled(False):
@@ -383,10 +383,18 @@ class ElevenlabsTTSPlugin(Plugins.Base):
             if not streamed_playback:
                 wav = self.generate_tts(text.strip())
                 if wav is not None:
-                    if download and websocket_connection is not None:
-                        wav_data = base64.b64encode(wav).decode('utf-8')
-                        websocket.AnswerMessage(websocket_connection,
-                                                json.dumps({"type": "tts_save", "wav_data": wav_data}))
+                    if download:
+                        if path is not None and path != '':
+                            # write wav_data to file in path
+                            with open(path, "wb") as f:
+                                f.write(wav)
+                            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                                   "data": "File saved to: " + path}))
+                        else:
+                            if websocket_connection is not None:
+                                wav_data = base64.b64encode(wav).decode('utf-8')
+                                websocket.AnswerMessage(websocket_connection,
+                                                        json.dumps({"type": "tts_save", "wav_data": wav_data}))
                     else:
                         self.play_audio_on_device(wav, device_index,
                                                   source_sample_rate=self.source_sample_rate,
@@ -396,12 +404,20 @@ class ElevenlabsTTSPlugin(Plugins.Base):
                                                   dtype=self.source_dtype,
                                                   )
             else:
-                if download and websocket_connection is not None:
+                if download:
                     wav = self.generate_tts(text.strip())
                     if wav is not None:
-                        wav_data = base64.b64encode(wav).decode('utf-8')
-                        websocket.AnswerMessage(websocket_connection,
-                                                json.dumps({"type": "tts_save", "wav_data": wav_data}))
+                        if path is not None and path != '':
+                            # write wav_data to file in path
+                            with open(path, "wb") as f:
+                                f.write(wav)
+                            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                                   "data": "File saved to: " + path}))
+                        else:
+                            if websocket_connection is not None:
+                                wav_data = base64.b64encode(wav).decode('utf-8')
+                                websocket.AnswerMessage(websocket_connection,
+                                                        json.dumps({"type": "tts_save", "wav_data": wav_data}))
                 else:
                     self.generate_tts_streamed(text.strip())
 

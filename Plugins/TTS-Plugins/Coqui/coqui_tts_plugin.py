@@ -1,6 +1,6 @@
 # ============================================================
 # Coqui Text to Speech Plugin for Whispering Tiger
-# V1.1.8
+# V1.1.9
 # Coqui: https://github.com/coqui-ai/TTS/
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -74,6 +74,7 @@ unsupported_args = {
 class CoquiTTSPlugin(Plugins.Base):
     device_index = None
     download_requested = False
+    download_path = ""
     websocket_connection = None
     multi_speaker = True
     multi_language = False
@@ -369,9 +370,16 @@ class CoquiTTSPlugin(Plugins.Base):
                                                   dtype="int16"
                                                   )
                     else:
-                        if self.websocket_connection is not None:
-                            websocket.AnswerMessage(self.websocket_connection,
-                                                    json.dumps({"type": "tts_save", "wav_data": wav_data}))
+                        if self.download_path != "":
+                            # write wav_data to file in path
+                            with open(self.download_path, "wb") as f:
+                                f.write(wav)
+                            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                                   "data": "File saved to: " + self.download_path}))
+                        else:
+                            if self.websocket_connection is not None:
+                                websocket.AnswerMessage(self.websocket_connection,
+                                                        json.dumps({"type": "tts_save", "wav_data": wav_data}))
                 elif "speakers" in message:
                     print("speakers", message["speakers"])
                     if len(message["speakers"]) == 0:
@@ -425,9 +433,10 @@ class CoquiTTSPlugin(Plugins.Base):
             websocket.BroadcastMessage(json.dumps({"type": "info", "data": "Plugin is disabled."}))
 
     def request_tts_data(self, text, device_index, websocket_connection=None, download=False, speech_data=None,
-                         sample_rate=None):
+                         sample_rate=None, path=''):
         self.device_index = device_index
         self.download_requested = download
+        self.download_path = path
         self.websocket_connection = websocket_connection
 
         model = self.get_plugin_setting("model")
@@ -505,7 +514,7 @@ class CoquiTTSPlugin(Plugins.Base):
             self.request_tts_data(text, device_index, None, False)
         pass
 
-    def tts(self, text, device_index, websocket_connection=None, download=False):
+    def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         if not self.is_enabled(False):
             return
         if self.get_plugin_setting("voice_change_source") == CONSTANTS["STS"]:
@@ -513,7 +522,7 @@ class CoquiTTSPlugin(Plugins.Base):
         if device_index is None or device_index == -1:
             device_index = settings.GetOption("device_default_out_index")
 
-        self.request_tts_data(text, device_index, websocket_connection, download)
+        self.request_tts_data(text, device_index, websocket_connection, download, path=path)
         pass
 
     def sts(self, wavefiledata, sample_rate):

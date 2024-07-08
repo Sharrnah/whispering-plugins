@@ -1,6 +1,6 @@
 # ============================================================
 # Shows currently playing Song over OSC using Whispering Tiger
-# Version 1.0.5
+# Version 1.0.6
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 import datetime
@@ -147,7 +147,4 @@ class CurrentPlayingPlugin(Plugins.Base):
         if any(ele in question for ele in plugin_commands):
             asyncio.run(self.get_current_song())
 
-        return
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
         return

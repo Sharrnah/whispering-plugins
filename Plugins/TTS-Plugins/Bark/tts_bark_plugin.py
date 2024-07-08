@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.29
+# V0.3.30
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -1384,7 +1384,7 @@ class BarkTTSPlugin(Plugins.Base):
             print(error_msg)
             websocket.BroadcastMessage(json.dumps({"type": "error", "data": error_msg}))
 
-    def tts(self, text, device_index, websocket_connection=None, download=False):
+    def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         if self.is_enabled(False):
             prompt_wrap = self.get_plugin_setting("prompt_wrap", "##")
             text_temp = self.get_plugin_setting("temperature_text")
@@ -1410,11 +1410,18 @@ class BarkTTSPlugin(Plugins.Base):
                                     long_text=long_text, long_text_stable_frequency=long_text_stable_frequency,
                                     long_text_split_pause=long_text_split_pause, )
             if wav is not None:
-                if download and websocket_connection is not None:
-                    wav_data = base64.b64encode(wav).decode('utf-8')
-                    websocket.AnswerMessage(websocket_connection,
-                                            json.dumps({"type": "tts_save", "wav_data": wav_data}))
-                    del wav_data
+                if download:
+                    if path is not None and path != '':
+                        # write wav_data to file in path
+                        with open(path, "wb") as f:
+                            f.write(wav)
+                        websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                               "data": "File saved to: " + path}))
+                    else:
+                        if websocket_connection is not None:
+                            wav_data = base64.b64encode(wav).decode('utf-8')
+                            websocket.AnswerMessage(websocket_connection,
+                                                    json.dumps({"type": "tts_save", "wav_data": wav_data}))
                 else:
                     self.play_audio_on_device(wav, device_index,
                                               source_sample_rate=self.sample_rate,
@@ -1422,7 +1429,6 @@ class BarkTTSPlugin(Plugins.Base):
                                               target_channels=2,
                                               dtype="int16"
                                               )
-                del wav
         return
 
     def on_event_received(self, message, websocket_connection=None):

@@ -1,6 +1,6 @@
 # ============================================================
 # Subtitles Display Plugin for Whispering Tiger
-# V1.0.9
+# V1.0.10
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -269,10 +269,4 @@ class SubtitleDisplayPlugin(Plugins.Base):
 
     def on_disable(self):
         self.stop()
-        pass
-
-    def timer(self):
-        pass
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
         pass

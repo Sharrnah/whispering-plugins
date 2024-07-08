@@ -1,6 +1,6 @@
 # ============================================================
 # prediction of text emotion plugin for Whispering Tiger
-# Version 1.0.4
+# Version 1.0.5
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 import json
@@ -135,9 +135,6 @@ class TextEmotionVrcPlugin(Plugins.Base):
                 command = mappings[prediction[0]['label']]
                 self.send_osc_command(command['param'], command['value'])
                 self.schedule_neutral_timer()  # reset the neutral timer
-        pass
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
         pass
 
     def on_enable(self):

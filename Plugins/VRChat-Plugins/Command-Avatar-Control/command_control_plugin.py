@@ -1,7 +1,7 @@
 # ============================================================
 # Plugin to listen for commands to send OSC messages using Whispering Tiger
 # Used to Control Avatar Parameters in VRChat
-# Version: 1.1.2
+# Version: 1.1.3
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 
@@ -422,10 +422,4 @@ class CommandControlPlugin(Plugins.Base):
 
     def on_enable(self):
         self.init()
-        pass
-
-    def timer(self):
-        pass
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
         pass

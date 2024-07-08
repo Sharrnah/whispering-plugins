@@ -1,6 +1,6 @@
 # ============================================================
 # Sends volume and audio direction over OSC using Whispering Tiger
-# Version 1.1.0
+# Version 1.1.1
 #
 # See https://github.com/Sharrnah/whispering
 # Inspired by https://github.com/Codel1417/VRC-OSC-Audio-Reaction
@@ -257,12 +257,3 @@ class AudioDirectionPlugin(Plugins.Base):
     def on_disable(self):
         self.init()
         pass
-
-    def timer(self):
-        pass
-
-    def stt(self, text, result_obj):
-        return
-
-    def tts(self, text, device_index, websocket_connection=None, download=False):
-        return

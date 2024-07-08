@@ -32,7 +32,7 @@ The format of the version line can start with `Version: `, `Version `, `V`, `V: 
 | `timer(self)`                                                                       | Optional    | is called every x seconds (defined in `plugin_timer`) and is paused for x seconds (defined in `plugin_timer_timeout`) when the Speech-to-Text engine returned a result.<br>_This can be used for a regular output that is stopped occasionally when a more important transcription is supposed to be displayed._ |
 | `stt(self, text, result_obj)`                                                       | Optional    | is called when the Speech-to-Text engine returns a result.                                                                                                                                                                                                                                                       |
 | `stt_intermediate(self, text, result_obj)`                                          | Optional    | is called when a live transcription result is available. Make sure to use the `stt` function for final results.                                                                                                                                                                                                  |
-| `tts(self, text, device_index, websocket_connection=None, download=False)`          | Optional    | is called when the TTS engine is about to play a result, except when called by the sst engine.<br>_if you want to play a sound when the Speech-to-Text engine returns a result, you should do it in the `stt` method as well._                                                                                   |
+| `tts(self, text, device_index, websocket_connection=None, download=False, path='')`          | Optional    | is called when the TTS engine is about to play a result, except when called by the sst engine.<br>_if you want to play a sound when the Speech-to-Text engine returns a result, you should do it in the `stt` method as well. Path is set if the TTS request was to save the TTS result._                                                                                   |
 | `sts(self, wavefiledata, sample_rate)`                                              | Optional    | is called when a recording is finished (which is sent to the Speech-to-Text model). This function gets the audio recording to be processed by the plugin.                                                                                                                                                        |
 | `text_translate(self, text, from_code, to_code) -> tuple (txt, from_lang, to_lang)` | Optional    | is called when a translation is requested and no included translator is available.<br>_Must return a tuple of translation_text, from_lang_code, to_lang_code._                                                                                                                                                   |
 | `on_{event_name}_call(self, data_obj) -> dict (data_obj)`                           | Optional    | is called when a custom plugin event is called via `Plugins.plugin_custom_event_call(event_name, data_obj)`. See [Custom Plugin events](#Custom-Plugin-events) for more info.                                                                                                                                    |
@@ -193,7 +193,16 @@ class ExamplePlugin(Plugins.Base):
         return
 
     ## OPTIONAL. called when the "send TTS" function is called
-    def tts(self, text, device_index, websocket_connection=None, download=False):
+    def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
+        #wav = self.generate_tts(text.strip())  # generate the TTS audio
+        if wav is not None:
+            if download:
+                if path is not None and path != '':
+                    # write wav_data to file in path
+                    with open(path, "wb") as f:
+                        f.write(wav)
+                    websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                            "data": "File saved to: " + path}))
         return
     
     ## OPTIONAL - called when audio is finished recording and the audio is sent to the STT model
