@@ -1,6 +1,6 @@
 # ============================================================
 # Mars5 Text to Speech Plugin for Whispering Tiger
-# V0.0.2
+# V0.0.3
 # Mars5: https://github.com/Camb-ai/MARS5-TTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -262,7 +262,11 @@ class Mars5TTSPlugin(Plugins.Base):
                 else:
                     audio_data = np.int16(wav_numpy * 32767)  # Convert to 16-bit PCM
 
-                    self.play_audio_on_device(audio_data, device_index,
+                    buff = io.BytesIO()
+                    write_wav(buff, self.sample_rate, audio_data)
+                    buff.seek(0)
+
+                    self.play_audio_on_device(buff.getvalue(), device_index,
                                               source_sample_rate=self.sample_rate,
                                               audio_device_channel_num=2,
                                               target_channels=2,
