@@ -1,6 +1,6 @@
 # ============================================================
 # Mars5 Text to Speech Plugin for Whispering Tiger
-# V0.0.1
+# V0.0.2
 # Mars5: https://github.com/Camb-ai/MARS5-TTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -10,12 +10,15 @@ import io
 import json
 import os
 import sys
+import traceback
+import wave
 from importlib import util
 import importlib
 import pkgutil
 from pathlib import Path
 
 import librosa
+import numpy as np
 import torch
 
 import Plugins
@@ -76,29 +79,40 @@ encodec_dependency = {
     "path": "encodec-0.1.1/encodec"
 }
 
+
 class Mars5TTSPlugin(Plugins.Base):
     model = None
     config_class = None
     encodec = None
     vocos = None
 
-    sample_rate = 16000
+    sample_rate = 24000
 
     def init(self):
         # prepare all possible settings
         self.init_plugin_settings(
             {
+                #"device": {"type": "select", "value": "Auto", "values": ["Auto", "CPU", "CUDA"]},
                 "reference_audio": {"type": "file_open", "accept": ".wav", "value": ""},
-                "reference_transcript": ""
+                "reference_transcript": "",
+
+                # settings
+                "rep_penalty_window": {"type": "slider", "min": 1, "max": 200, "step": 1, "value": 100},
+                "top_k": {"type": "slider", "min": 0, "max": 200, "step": 1, "value": 100},
+                "temperature": {"type": "slider", "min": 0.1, "max": 1.0, "step": 0.1, "value": 0.7},
+                "freq_penalty": {"type": "slider", "min": 0.1, "max": 10.0, "step": 0.1, "value": 3.0},
+                "timesteps": {"type": "slider", "min": 1, "max": 400, "step": 1, "value": 200},
+                "max_prompt_dur": {"type": "slider", "min": 1, "max": 24, "step": 0.5, "value": 12.0},
             },
             settings_groups={
                 "General": ["reference_audio", "reference_transcript"],
+                "Settings": ["rep_penalty_window", "top_k", "temperature", "freq_penalty", "timesteps", "max_prompt_dur"],
             }
         )
 
         if self.is_enabled(False):
             #
-            # # load the bark module
+            # # load the mars5 module
             # if not Path(plugin_dir / mars5_dependency_module["path"] / "inference.py").is_file():
             #     downloader.download_extract([mars5_dependency_module["url"]],
             #                                 str(plugin_dir.resolve()),
@@ -134,13 +148,18 @@ class Mars5TTSPlugin(Plugins.Base):
 
             self._load_vocos_model()
 
+            #device = None
+            #if self.get_plugin_setting("device", "Auto").lower() != "auto":
+            #    device = torch.device(self.get_plugin_setting("device", "Auto").lower())
+
             self.model, self.config_class = torch.hub.load(trust_repo=True, skip_validation=True,
                                                            source='github',
                                                            repo_or_dir='Camb-ai/mars5-tts',
-                                                           model='mars5_english')
+                                                           model='mars5_english',
+                                                           #device=device,
+                                                           )
 
             self.sample_rate = self.model.sr
-
 
     def play_audio_on_device(self, wav, audio_device, source_sample_rate=24000, audio_device_channel_num=2,
                              target_channels=2, dtype="int16"):
@@ -153,13 +172,16 @@ class Mars5TTSPlugin(Plugins.Base):
             secondary_audio_device = settings.GetOption("tts_secondary_playback_device")
             if secondary_audio_device == -1:
                 secondary_audio_device = settings.GetOption("device_default_out_index")
-
-        audio_tools.play_audio(wav, audio_device,
-                               source_sample_rate=source_sample_rate,
-                               audio_device_channel_num=audio_device_channel_num,
-                               target_channels=target_channels,
-                               dtype=dtype,
-                               secondary_device=secondary_audio_device, tag="tts")
+        try:
+            audio_tools.play_audio(wav, audio_device,
+                                   source_sample_rate=source_sample_rate,
+                                   audio_device_channel_num=audio_device_channel_num,
+                                   target_channels=target_channels,
+                                   dtype=dtype,
+                                   secondary_device=secondary_audio_device, tag="tts")
+        except Exception as e:
+            print(f"Failed to play audio on device: {e}")
+            traceback.print_exc()
 
     def _load_vocos_model(self):
         # load the vocos module (optional vocoder)
@@ -179,27 +201,36 @@ class Mars5TTSPlugin(Plugins.Base):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.vocos = vocos_module.Vocos.from_pretrained("charactr/vocos-encodec-24khz").to(device)
 
-            # if self.model is not None and self.model.Vocos is None:
-            #     self.model.Vocos = vocos_module
-
     def generate_tts(self, text, reference_wav=None, reference_transcript='', deep_clone=False):
         wav, sr = librosa.load(reference_wav,
                                sr=self.model.sr, mono=True)
         wav = torch.from_numpy(wav)
-        print("Reference audio:")
 
-        cfg = self.config_class(deep_clone=deep_clone, rep_penalty_window=100,
-                                top_k=100, temperature=0.7, freq_penalty=3)
+        rep_penalty_window = self.get_plugin_setting("rep_penalty_window", 100)
+        top_k = self.get_plugin_setting("top_k", 100)
+        temperature = self.get_plugin_setting("temperature", 0.7)
+        freq_penalty = self.get_plugin_setting("freq_penalty", 3)
+
+        timesteps = self.get_plugin_setting("timesteps", 200)
+        max_prompt_dur = self.get_plugin_setting("max_prompt_dur", 12.0)
+
+        print("Generating TTS with Mars5 ...")
+
+        cfg = self.config_class(deep_clone=deep_clone, rep_penalty_window=rep_penalty_window,
+                                top_k=top_k, temperature=temperature, freq_penalty=freq_penalty,
+                                timesteps=timesteps, max_prompt_dur=max_prompt_dur)
 
         ar_codes, wav_out = self.model.tts(text, wav,
                                            reference_transcript,
                                            cfg=cfg)
 
+        print("Generating TTS with Mars5 Finished.")
+
         buff = io.BytesIO()
         write_wav(buff, self.model.sr, wav_out.numpy())
         buff.seek(0)
 
-        return buff.getvalue()
+        return buff.getvalue(), wav_out.numpy()
 
     def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         if self.is_enabled(False):
@@ -211,9 +242,10 @@ class Mars5TTSPlugin(Plugins.Base):
             if reference_transcript != "":
                 deep_clone = True
 
-            wav = self.generate_tts(text.strip(),
-                                    reference_wav=self.get_plugin_setting("reference_audio"),
-                                    reference_transcript=reference_transcript, deep_clone=deep_clone)
+            wav, wav_numpy = self.generate_tts(text.strip(),
+                                               reference_wav=self.get_plugin_setting("reference_audio"),
+                                               reference_transcript=reference_transcript, deep_clone=deep_clone)
+
             if wav is not None:
                 if download:
                     if path is not None and path != '':
@@ -228,7 +260,9 @@ class Mars5TTSPlugin(Plugins.Base):
                             websocket.AnswerMessage(websocket_connection,
                                                     json.dumps({"type": "tts_save", "wav_data": wav_data}))
                 else:
-                    self.play_audio_on_device(wav, device_index,
+                    audio_data = np.int16(wav_numpy * 32767)  # Convert to 16-bit PCM
+
+                    self.play_audio_on_device(audio_data, device_index,
                                               source_sample_rate=self.sample_rate,
                                               audio_device_channel_num=2,
                                               target_channels=2,
