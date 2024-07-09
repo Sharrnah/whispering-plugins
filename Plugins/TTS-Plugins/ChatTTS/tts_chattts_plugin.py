@@ -17,7 +17,6 @@ import importlib
 import pkgutil
 from pathlib import Path
 
-import librosa
 import numpy as np
 import torch
 import torchaudio
@@ -25,8 +24,6 @@ import torchaudio
 import Plugins
 import audio_tools
 import downloader
-
-from scipy.io.wavfile import write as write_wav
 
 import settings
 import websocket
