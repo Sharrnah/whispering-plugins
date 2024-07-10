@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.2
+# V0.0.3
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -123,34 +123,34 @@ class ChatTTSPlugin(Plugins.Base):
     speaker_dir = Path(plugin_dir / "speaker")
 
     def init(self):
+        self.init_plugin_settings(
+            {
+                "speaker_file": {"type": "file_open", "accept": ".spk,.pt", "value": str(Path(self.speaker_dir / "my_speaker.spk").resolve())},
+                "temperature": {"type": "slider", "min": 0.0001, "max": 1.0000, "step": 0.0001, "value": 0.0003},
+                "top_p": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.1, "value": 0.7},
+                "top_k": {"type": "slider", "min": 1, "max": 100, "step": 1, "value": 20},
+                "repetition_penalty": {"type": "slider", "min": 0.00, "max": 2.00, "step": 0.01, "value": 1.05},
+                "max_new_token": {"type": "slider", "min": 1, "max": 4000, "step": 1, "value": 2048},
+                "min_new_token": {"type": "slider", "min": 0, "max": 1000, "step": 1, "value": 0},
+
+                "prompt": "",
+                "text_wrap": "#!# [uv_break]",
+                "text_wrap_info": {
+                    "label": "wraps text. #!# will be replaced with the text.",
+                    "type": "label", "style": "left"},
+                "seed": -1,
+                "skip_refine_text": False,
+                "do_text_normalization": True,
+                "do_homophone_replacement": True,
+                "language": {"type": "select", "value": "Auto", "values": ["Auto", "en", "zh"]},
+            },
+            settings_groups={
+                "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token", "min_new_token"],
+                "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization", "do_homophone_replacement", "language"],
+            }
+        )
         if self.is_enabled(False):
-            self.init_plugin_settings(
-                {
-                    "speaker_file": {"type": "file_open", "accept": ".spk,.pt", "value": str(Path(self.speaker_dir / "my_speaker.spk").resolve())},
-                    "temperature": {"type": "slider", "min": 0.0001, "max": 1.0000, "step": 0.0001, "value": 0.0003},
-                    "top_p": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.1, "value": 0.7},
-                    "top_k": {"type": "slider", "min": 1, "max": 100, "step": 1, "value": 20},
-                    "repetition_penalty": {"type": "slider", "min": 0.00, "max": 2.00, "step": 0.01, "value": 1.05},
-                    "max_new_token": {"type": "slider", "min": 1, "max": 4000, "step": 1, "value": 2048},
-                    "min_new_token": {"type": "slider", "min": 0, "max": 1000, "step": 1, "value": 0},
-
-                    "prompt": "",
-                    "text_wrap": "#!# [uv_break][uv_break]",
-                    "text_wrap_info": {
-                        "label": "wraps text. #!# will be replaced with the text.",
-                        "type": "label", "style": "left"},
-                    "seed": -1,
-                    "skip_refine_text": False,
-                    "do_text_normalization": True,
-                    "do_homophone_replacement": True,
-                    "language": {"type": "select", "value": "Auto", "values": ["Auto", "en", "zh"]},
-                },
-                settings_groups={
-                    "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token", "min_new_token"],
-                    "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization", "do_homophone_replacement", "language"],
-                }
-            )
-
+            print("loading ChatTTS...")
             # load the encodec module
             self.encodec = self._module_loader(encodec_dependency, "encodec module", extract_format="tar.gz")
 
@@ -187,11 +187,14 @@ class ChatTTSPlugin(Plugins.Base):
             self.model = self.chattts_module.Chat()
             self.model.load(custom_path=str(Path(plugin_dir / "models").resolve()), compile=False, source="custom")
 
+            print("ChatTTS loaded.")
+
             os.makedirs(self.speaker_dir, exist_ok=True)
         else:
             if self.model is not None:
                 self.model.unload()
                 del self.model
+                print("ChatTTS unloaded.")
 
     def _module_loader(self, module_dict, title="", extract_format="zip", recursive=False):
         fallback_extract_func = downloader.extract_zip
