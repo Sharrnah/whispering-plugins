@@ -61,7 +61,7 @@ To use specific widgets in plugin settings, you can add specific structs to the 
 The following structs are available:
 - `{"type": "slider", "min": 0.0, "max": 1.0, "step": 0.01, "value": 0.7}` - A slider
 - `{"type": "button", "label": "Batch Generate", "style": "primary"}` - A button (style can be "primary" or "default")
-- `{"type": "select", "label": "Label", "value": "default value", "options": ["default value", "option2", "option3"]}` - A select box 
+- `{"type": "select", "label": "Label", "value": "default value", "options": ["default value", "option2", "option3"]}` - A select box
 - `{"type": "textarea", "rows": 5, "value": ""}` - A textarea
 - `{"type": "textfield", "password": false, "value": ""}` - A textfield (password field if "password" is true)
 - `{"type": "hyperlink", "label": "hyperlink", "value": "https://github.com/Sharrnah/whispering-ui"}`
@@ -70,7 +70,7 @@ The following structs are available:
 - `{"type": "file_save", "accept": ".npz", "value": "last_prompt.npz"}` - A file save dialog (accept can be any file extension or a comma separated list of file extensions)
 - `{"type": "folder_open", "accept": "", "value": ""}` - A folder open dialog
 - `{"type": "dir_open", "accept": "", "value": ""}` - Alias for a folder open dialog
-- `{"type": "select_audio", "device_api": "|wasapi|mme|directsound", "device_type": "input|output", "value": ""}` - List of audio devices. Only listing input / output devices if device_type = "input" / device_type = "output", "device_api" can be empty (using main app api), 'wasapi', 'mme' or 'directsound' for a specific audio api. `get_plugin_setting` on a `select_audio` will return a valid pyAudio Audio Device ID.
+- `{"type": "select_audio", "device_api": "|wasapi|mme|directsound|all", "device_type": "input|output", "value": ""}` - List of audio devices. Only listing input / output devices if device_type = "input" / device_type = "output". "device_api" can be empty (using main app api), 'wasapi', 'mme' or 'directsound' for a specific audio api, or 'all' for all APIs. `get_plugin_setting` on a `select_audio` will return a valid pyAudio Audio Device ID.
 
 ## Custom Plugin events
 You can use event calls in plugins using `Plugins.plugin_custom_call(event_name, data_obj)`.
@@ -108,10 +108,11 @@ Make sure to check if the Event should be callable. (Is Plugin enabled? Are the 
 
 ### List of core plugin events
 
-| Function Name                            | Description                                                                                                                     |
-|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
-| on_silero_tts_after_audio_call(data_obj) | Called after the Included Silero TTS generated audio. Expects the `audio` key in the `data_obj` <br> (audio as Pytorch Tensor). |
+| Function Name                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                               |
+|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| on_silero_tts_after_audio_call(data_obj)                       | Called after the Included Silero TTS generated audio. Expects the `audio` key in the `data_obj` <br> (audio as Pytorch Tensor).                                                                                                                                                                                                                                                                                           |
 | on_audio_processor_stt_{audio_processor_caller}_call(data_obj) | Called after the stt and stt_intermediate plugin methods are called, <br>with the name of the `audio_processor_caller` setting _`settings.SetOption("audio_processor_caller", "custom_name")`_.<br>`data_obj` will be `{"text": predicted_text, "result_obj": result_obj, "final_audio": final_audio}` (used by the [Secondary Profile plugin](/Plugins/Other-Plugins/Secondary-Profile/secondary_profile_plugin.py))<br> |
+| on_plugin_get_languages_call(data_obj)                         | Called to fetch available text translation languages for Text Translation Plugins. should return the `data_obj` with a dict in the form `data_obj['languages'] = tuple([{"code": code, "name": language}])`. Return `None` if the Plugin is disabled.<br>                                                                                                                                                                 |
 
 
 ## Example plugin
