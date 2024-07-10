@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.3
+# V0.0.4
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -396,6 +396,37 @@ class ChatTTSPlugin(Plugins.Base):
                                           dtype="int16"
                                           )
         return
+
+    def stt(self, text, result_obj):
+        if self.is_enabled(False) and settings.GetOption("tts_answer") and text.strip() != "":
+            device_index = settings.GetOption("device_out_index")
+            if device_index is None or device_index == -1:
+                device_index = settings.GetOption("device_default_out_index")
+
+            speaker_file = self.get_plugin_setting("speaker_file")
+            if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(speaker_file).is_file():
+                if Path(speaker_file).suffix == ".pt":
+                    spk_tensor = torch.load(speaker_file, map_location=torch.device('cpu')).detach()
+                    speaker = self.model._encode_spk_emb(spk_tensor)
+                elif Path(speaker_file).suffix == ".spk":
+                    speaker = self.load_speaker(speaker_file)
+                else:
+                    print(f"Invalid speaker file format. Expected '.pt' or '.spk'. Using random speaker.")
+                    speaker = self.generate_speaker(f'random_speaker.spk')
+            else:
+                speaker = self.generate_speaker(f'random_speaker.spk')
+
+            wav_bytes = self.generate_tts(text.strip(), speaker=speaker)
+            if wav_bytes is None:
+                print("No audio to process.")
+                return
+
+            self.play_audio_on_device(wav_bytes, device_index,
+                                      source_sample_rate=self.sample_rate,
+                                      audio_device_channel_num=2,
+                                      target_channels=2,
+                                      dtype="int16"
+                                      )
 
     def on_enable(self):
         self.init()
