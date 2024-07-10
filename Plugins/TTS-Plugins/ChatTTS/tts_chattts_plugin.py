@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.1
+# V0.0.2
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -126,23 +126,28 @@ class ChatTTSPlugin(Plugins.Base):
         if self.is_enabled(False):
             self.init_plugin_settings(
                 {
-                    "speaker_file": {"type": "file_open", "accept": ".spk", "value": str(Path(self.speaker_dir / "my_speaker.spk").resolve())},
-                    "temperature": {"type": "slider", "min": 0.01, "max": 1.00, "step": 0.01, "value": 0.10},
+                    "speaker_file": {"type": "file_open", "accept": ".spk,.pt", "value": str(Path(self.speaker_dir / "my_speaker.spk").resolve())},
+                    "temperature": {"type": "slider", "min": 0.0001, "max": 1.0000, "step": 0.0001, "value": 0.0003},
                     "top_p": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.1, "value": 0.7},
                     "top_k": {"type": "slider", "min": 1, "max": 100, "step": 1, "value": 20},
-                    "repetition_penalty": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.1, "value": 1.0},
-                    "max_new_token": {"type": "slider", "min": 1, "max": 3000, "step": 1, "value": 512},
+                    "repetition_penalty": {"type": "slider", "min": 0.00, "max": 2.00, "step": 0.01, "value": 1.05},
+                    "max_new_token": {"type": "slider", "min": 1, "max": 4000, "step": 1, "value": 2048},
                     "min_new_token": {"type": "slider", "min": 0, "max": 1000, "step": 1, "value": 0},
 
-                    "prompt": "[speed_5]",
+                    "prompt": "",
+                    "text_wrap": "#!# [uv_break][uv_break]",
+                    "text_wrap_info": {
+                        "label": "wraps text. #!# will be replaced with the text.",
+                        "type": "label", "style": "left"},
                     "seed": -1,
                     "skip_refine_text": False,
                     "do_text_normalization": True,
                     "do_homophone_replacement": True,
+                    "language": {"type": "select", "value": "Auto", "values": ["Auto", "en", "zh"]},
                 },
                 settings_groups={
                     "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token", "min_new_token"],
-                    "Options": ["prompt", "seed", "skip_refine_text", "do_text_normalization", "do_homophone_replacement"],
+                    "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization", "do_homophone_replacement", "language"],
                 }
             )
 
@@ -183,6 +188,10 @@ class ChatTTSPlugin(Plugins.Base):
             self.model.load(custom_path=str(Path(plugin_dir / "models").resolve()), compile=False, source="custom")
 
             os.makedirs(self.speaker_dir, exist_ok=True)
+        else:
+            if self.model is not None:
+                self.model.unload()
+                del self.model
 
     def _module_loader(self, module_dict, title="", extract_format="zip", recursive=False):
         fallback_extract_func = downloader.extract_zip
@@ -253,14 +262,22 @@ class ChatTTSPlugin(Plugins.Base):
         min_new_token = self.get_plugin_setting("min_new_token", 0)
         prompt = self.get_plugin_setting("prompt", "[speed_5]")
         seed = int(self.get_plugin_setting("seed", -1))
+        text_wrap = self.get_plugin_setting("text_wrap", "#!#")
 
         skip_refine_text = self.get_plugin_setting("skip_refine_text", False)
         do_text_normalization = self.get_plugin_setting("do_text_normalization", True)
         do_homophone_replacement = self.get_plugin_setting("do_homophone_replacement", True)
+        language = self.get_plugin_setting("language", None)
+        if language is not None and (language == "" or language.lower() == "auto"):
+            language = None
 
         if seed <= -1:
             seed = random.randint(0, 2 ** 32 - 1)
         torch.manual_seed(seed)
+
+        # wrap text
+        if "#!#" in text_wrap:
+            text = text_wrap.replace("#!#", text)
 
         params_refine_text = self.chattts_module.Chat.RefineTextParams(
             prompt=prompt,
@@ -279,6 +296,7 @@ class ChatTTSPlugin(Plugins.Base):
 
         wavs = self.model.infer(
             [text],
+            lang=language,
             skip_refine_text=skip_refine_text,
             params_refine_text=params_refine_text,
             params_infer_code=params_infer_code,
@@ -339,7 +357,14 @@ class ChatTTSPlugin(Plugins.Base):
 
             speaker_file = self.get_plugin_setting("speaker_file")
             if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(speaker_file).is_file():
-                speaker = self.load_speaker(speaker_file)
+                if Path(speaker_file).suffix == ".pt":
+                    spk_tensor = torch.load(speaker_file, map_location=torch.device('cpu')).detach()
+                    speaker = self.model._encode_spk_emb(spk_tensor)
+                elif Path(speaker_file).suffix == ".spk":
+                    speaker = self.load_speaker(speaker_file)
+                else:
+                    print(f"Invalid speaker file format. Expected '.pt' or '.spk'. Using random speaker.")
+                    speaker = self.generate_speaker(f'random_speaker.spk')
             else:
                 speaker = self.generate_speaker(f'random_speaker.spk')
 
@@ -374,4 +399,5 @@ class ChatTTSPlugin(Plugins.Base):
         pass
 
     def on_disable(self):
+        self.init()
         pass
