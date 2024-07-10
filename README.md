@@ -9,14 +9,14 @@ _See [plugin-creation.md](Documentation/plugin-creation.md) for more information
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/sharrnah)
 
 ### Installation of Plugins
-#### Using Whispering Tiger UI Application
+#### Using Whispering Tiger UI Application _(recommended)_:
 Go to the `Plugins` Tab and click on the `Download / Update Plugins` Button.
 
 Select the Plugin you want to install from the list and press `Install`.
 
 _(The Button might show `ReInstall` or `Update` depending on if the Plugin is already installed and is the current version.)_
 
-#### Manual Installation
+#### Manual Installation:
 Download the `.py` file and copy the plugin file into the `Plugins` directory in the root of the Whispering Tiger folder.
 
 ## List of Plugins
