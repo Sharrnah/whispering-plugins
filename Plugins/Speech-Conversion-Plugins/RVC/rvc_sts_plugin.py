@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.4
+# V1.1.5
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -159,9 +159,9 @@ class RVCStsPlugin(Plugins.Base):
                                         "values": [value for key, value in CONSTANTS.items()]},
 
                 # realtime settings
-                "rt_input_device_index": {"type": "select_audio", "device_api": "all", "device_type": "input", "value": str(settings.GetOption("device_index"))},
+                "rt_input_device_index": {"type": "select_audio", "device_api": "mme", "device_type": "input", "value": str(settings.GetOption("device_index"))},
                 "rt_input_noise_reduce": False,
-                "rt_output_device_index": {"type": "select_audio", "device_api": "all", "device_type": "output", "value": str(settings.GetOption("device_out_index"))},
+                "rt_output_device_index": {"type": "select_audio", "device_api": "mme", "device_type": "output", "value": str(settings.GetOption("device_out_index"))},
                 "rt_output_noise_reduce": False,
                 "rt_threshold": {"type": "slider", "min": -60.0, "max": 0.0, "step": 1, "value": -60.0},
                 "rt_block_time": {"type": "slider", "min": 0.1, "max": 5.0, "step": 0.1, "value": 1.0},
@@ -722,6 +722,7 @@ class RVCStsPlugin(Plugins.Base):
         """
         接受音频输入
         """
+        #extra_settings = sd.WasapiSettings(auto_convert=True)
         channels = 1 if sys.platform == "darwin" else 2
         with sd.Stream(
                 channels=channels,
@@ -729,6 +730,7 @@ class RVCStsPlugin(Plugins.Base):
                 blocksize=self.block_frame,
                 samplerate=self.samplerate,
                 dtype="float32",
+                #extra_settings=extra_settings
         ) as stream:
             global stream_latency
             stream_latency = stream.latency[-1]
