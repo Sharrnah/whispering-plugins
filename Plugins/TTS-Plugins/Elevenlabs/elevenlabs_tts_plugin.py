@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.0.12
+# V1.1.1
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -11,7 +11,6 @@ import json
 import os
 import re
 import shutil
-import threading
 
 import numpy as np
 
@@ -27,8 +26,7 @@ import downloader
 import soundfile
 import soundfile as sf
 from scipy.io.wavfile import write as write_wav
-from typing import BinaryIO, Union
-
+from typing import BinaryIO, Union, Iterator
 import websocket
 
 
@@ -54,12 +52,35 @@ def load_module(package_dir):
     return module
 
 
-
 elevenlabs_dependency_module = {
-    "url": "https://files.pythonhosted.org/packages/3c/4e/746741b1cdaf599de53651bb04457fe2aa53f264d6d369346879108b253b/elevenlabs-0.2.27-py3-none-any.whl",
-    "sha256": "c31ea892d5668002bc26d0bb46a6466b0b4e2fe5aaed75cbc1b7011f01d3fa29",
+    "url": "https://files.pythonhosted.org/packages/68/6f/30f2732eb6acf2fefef5b3fea204c452ca435efa2c29866b7c7f5391ed1b/elevenlabs-1.5.0-py3-none-any.whl",
+    "sha256": "cc28257ad535adf57fdc70c9a3b8ddd6c34166f310bbc11a733523894e73ceca",
     "path": "elevenlabs",
-    "version": "0.2.27"
+    "version": "1.5.0"
+}
+httpx_dependency_module = {
+    "url": "https://files.pythonhosted.org/packages/41/7b/ddacf6dcebb42466abd03f368782142baa82e08fc0c1f8eaa05b4bae87d5/httpx-0.27.0-py3-none-any.whl",
+    "sha256": "71d5465162c13681bff01ad59b2cc68dd838ea1f10e51574bac27103f00c91a5",
+    "path": "httpx",
+    "version": "0.27.0"
+}
+sniffio_dependency_module = {
+    "url": "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl",
+    "sha256": "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+    "path": "sniffio",
+    "version": "1.3.1"
+}
+httpcore_dependency_module = {
+    "url": "https://files.pythonhosted.org/packages/78/d4/e5d7e4f2174f8a4d63c8897d79eb8fe2503f7ecc03282fee1fa2719c2704/httpcore-1.0.5-py3-none-any.whl",
+    "sha256": "421f18bac248b25d310f3cacd198d55b8e6125c107797b609ff9b7a6ba7991b5",
+    "path": "httpcore",
+    "version": "1.0.5"
+}
+h11_dependency_module = {
+    "url": "https://files.pythonhosted.org/packages/95/04/ff642e65ad6b90db43e668d70ffb6736436c7ce41fcc549f4e9472234127/h11-0.14.0-py3-none-any.whl",
+    "sha256": "e3fe4ac4b851c468cc8363d500db52c2ead036020723024a109d37346efaa761",
+    "path": "h11",
+    "version": "0.14.0"
 }
 
 elevenlabs_plugin_dir = Path(Path.cwd() / "Plugins" / "elevenlabs_plugin")
@@ -84,6 +105,7 @@ def write_version_file(directory, version):
 
 
 class ElevenlabsTTSPlugin(Plugins.Base):
+    httpx_lib = None
     elevenlabslib = None
     client = None
     voices = []
@@ -96,11 +118,57 @@ class ElevenlabsTTSPlugin(Plugins.Base):
 
     audio_streamer = None
 
+    latency_optimizations = {
+        "default (no latency optimizations)": 0,
+        "normal (about 50% of max)": 1,
+        "strong (about 75% of max)": 2,
+        "max": 3,
+        "max with text normalizer turned off (best latency)": 4
+    }
+
+    # return list of keys from latency_optimizations
+    def get_latency_optimizations_list(self):
+        return list(self.latency_optimizations.keys())
+
+    # return value of provided latency_optimization key
+    def get_latency_optimization_value(self, key):
+        return self.latency_optimizations.get(key, 0)
+
+    def _load_python_module(self, dependency_module, module_name="module"):
+        # load the elevenlabs module
+        needs_update = should_update_version_file_check(
+            Path(elevenlabs_plugin_dir / dependency_module["path"]),
+            dependency_module["version"]
+        )
+        if needs_update and Path(elevenlabs_plugin_dir / dependency_module["path"]).is_dir():
+            print(f"Removing old {module_name} directory")
+            shutil.rmtree(str(Path(elevenlabs_plugin_dir / dependency_module["path"]).resolve()))
+        if not Path(elevenlabs_plugin_dir / dependency_module[
+            "path"] / "__init__.py").is_file() or needs_update:
+            downloader.download_extract([dependency_module["url"]],
+                                        str(elevenlabs_plugin_dir.resolve()),
+                                        dependency_module["sha256"],
+                                        alt_fallback=True,
+                                        fallback_extract_func=downloader.extract_zip,
+                                        fallback_extract_func_args=(
+                                            str(elevenlabs_plugin_dir / os.path.basename(
+                                                dependency_module["url"])),
+                                            str(elevenlabs_plugin_dir.resolve()),
+                                        ),
+                                        title=module_name, extract_format="zip")
+            # write version file
+            write_version_file(
+                Path(elevenlabs_plugin_dir / dependency_module["path"]),
+                dependency_module["version"]
+            )
+        return load_module(str(Path(elevenlabs_plugin_dir / dependency_module["path"]).resolve()))
+
+
     def word_char_count_allowed(self, text):
         word_count = len(re.findall(r'\w+', text))
         if self.get_plugin_setting("stt_min_words", 1) <= word_count <= self.get_plugin_setting("stt_max_words",
                                                                                                 40) and self.get_plugin_setting(
-                "stt_max_char_length", 200) >= len(text):
+            "stt_max_char_length", 200) >= len(text):
             return True
         else:
             return False
@@ -123,70 +191,70 @@ class ElevenlabsTTSPlugin(Plugins.Base):
             {
                 # General
                 #"voice_index": 0,
-                "model_id": {"type": "select", "value": "eleven_multilingual_v1", "values": ["eleven_multilingual_v1", "eleven_multilingual_v2", "eleven_english_v2", "eleven_turbo_v2", "eleven_monolingual_v1"]},
+                "model_id": {"type": "select", "value": "eleven_multilingual_v1",
+                             "values": ["eleven_multilingual_v1", "eleven_multilingual_v2", "eleven_english_v2",
+                                        "eleven_turbo_v2", "eleven_turbo_v2_5", "eleven_monolingual_v1"]},
 
                 # Voice Settings
-                "voice_stability": None,
-                "voice_similarity_boost": None,
+                "voice_stability": {"type": "slider", "min": -0.01, "max": 1.00, "step": 0.01, "value": 0.71},
+                "voice_similarity_boost": {"type": "slider", "min": -0.01, "max": 1.00, "step": 0.01, "value": 0.50},
+                "voice_style": {"type": "slider", "min": -0.01, "max": 1.00, "step": 0.01, "value": 0.00},
                 "stt_min_words": 1,
                 "stt_max_words": 40,
                 "stt_max_char_length": 200,
 
                 "streamed_playback": False,
+                "optimize_streaming_latency": {"type": "select", "value": self.get_latency_optimizations_list()[0],
+                                               "values": self.get_latency_optimizations_list()},
 
                 # Account
                 "api_key": {"type": "textfield", "value": "", "password": True},
             },
             settings_groups={
-                "General": ["model_id", "streamed_playback"],
-                "Voice Settings": ["voice_stability", "voice_similarity_boost", "stt_min_words", "stt_max_words", "stt_max_char_length"],
+                "General": ["model_id", "streamed_playback", "optimize_streaming_latency"],
+                "Voice Settings": ["voice_stability", "voice_similarity_boost", "voice_style", "stt_min_words", "stt_max_words",
+                                   "stt_max_char_length"],
                 "Account": ["api_key"],
             }
         )
 
         if self.is_enabled(False):
-            # load the elevenlabs module
-            needs_update = should_update_version_file_check(
-                Path(elevenlabs_plugin_dir / elevenlabs_dependency_module["path"]),
-                elevenlabs_dependency_module["version"]
-            )
-            if needs_update and Path(elevenlabs_plugin_dir / elevenlabs_dependency_module["path"]).is_dir():
-                print("Removing old elevenlabs directory")
-                shutil.rmtree(str(Path(elevenlabs_plugin_dir / elevenlabs_dependency_module["path"]).resolve()))
-            if not Path(elevenlabs_plugin_dir / elevenlabs_dependency_module["path"] / "__init__.py").is_file() or needs_update:
-                downloader.download_extract([elevenlabs_dependency_module["url"]],
-                                            str(elevenlabs_plugin_dir.resolve()),
-                                            elevenlabs_dependency_module["sha256"],
-                                            alt_fallback=True,
-                                            fallback_extract_func=downloader.extract_zip,
-                                            fallback_extract_func_args=(
-                                                str(elevenlabs_plugin_dir / os.path.basename(elevenlabs_dependency_module["url"])),
-                                                str(elevenlabs_plugin_dir.resolve()),
-                                            ),
-                                            title="elevenlabs module", extract_format="zip")
-                # write version file
-                write_version_file(
-                    Path(elevenlabs_plugin_dir / elevenlabs_dependency_module["path"]),
-                    elevenlabs_dependency_module["version"]
-                )
+            # load the sniffio module (required by httpx)
+            _ = self._load_python_module(sniffio_dependency_module, "sniffio module")
+            # load the h11 module (required by httpcore)
+            _ = self._load_python_module(h11_dependency_module, "h11 module")
+            # load the httpcore module (required by httpx)
+            _ = self._load_python_module(httpcore_dependency_module, "httpcore module")
 
-            self.elevenlabslib = load_module(
-                str(Path(elevenlabs_plugin_dir / elevenlabs_dependency_module["path"]).resolve()))
+            # load the httpx module (required by elevenlabs)
+            self.httpx_lib = self._load_python_module(httpx_dependency_module, "httpx module")
+
+            # load the elevenlabs module
+            self.elevenlabslib = self._load_python_module(elevenlabs_dependency_module, "elevenlabs module")
+            sys.path.append(str(elevenlabs_plugin_dir.resolve()))
 
             # disable default tts engine
             settings.SetOption("tts_enabled", False)
 
-            threading.Thread(target=self._login).start()
+            self._login()
         pass
 
     def _login(self):
         print("Logging in to Elevenlabs...")
         api_key = self.get_plugin_setting("api_key")
-        os.environ["ELEVEN_API_KEY"] = api_key
+        #os.environ["ELEVEN_API_KEY"] = api_key
         if api_key is None or api_key == "":
             print("No API key set or login failed")
             return
-        self.voices = self.elevenlabslib.voices()
+
+        from elevenlabs.client import ElevenLabs
+
+        self.client = ElevenLabs(
+            api_key=api_key
+        )
+
+        voices_response = self.client.voices.get_all()
+        self.voices = voices_response.voices
 
         print("Logged in to Elevenlabs.")
 
@@ -218,38 +286,54 @@ class ElevenlabsTTSPlugin(Plugins.Base):
         if len(text.strip()) == 0:
             return None
         voice_name = settings.GetOption("tts_voice")
-        voice_index = self.get_plugin_setting("voice_index", 0)
         model_id = self.get_plugin_setting("model_id", "eleven_multilingual_v1")
         stability = self.get_plugin_setting("voice_stability", None)
         similarity_boost = self.get_plugin_setting("voice_similarity_boost", None)
+        style = self.get_plugin_setting("voice_style", None)
 
-        if voice_name is None or voice_name == "" or self.elevenlabslib is None:
+        if voice_name is None or voice_name == "" or self.elevenlabslib is None or self.client is None:
             print("No API instance or voice name set")
             return
 
         try:
             selected_voice = self._get_voices_by_name(voice_name)
 
-            voice_settings = selected_voice.fetch_settings()
-            if stability is not None:
-                voice_settings.stability = float(stability)
-            if similarity_boost is not None:
-                voice_settings.similarity_boost = float(similarity_boost)
+            if selected_voice.settings is None:
+                settings_stability = 0.71
+                settings_similarity_boost = 0.5
+                settings_style = 0.0
+                if stability is not None and float(stability) > -0.01:
+                    settings_stability = float(stability)
+                if similarity_boost is not None and float(similarity_boost) > -0.01:
+                    settings_similarity_boost = float(similarity_boost)
+                if style is not None and float(style) > -0.01:
+                    settings_style = float(style)
 
-            audio_data = self.elevenlabslib.generate(text=text.strip(),
-                                                     voice=self.elevenlabslib.Voice(
-                                                         voice_id=selected_voice.voice_id,
-                                                         settings=voice_settings
-                                                     ),
-                                                     model=model_id,
-                                                     )
+                voice_settings = self.elevenlabslib.VoiceSettings(
+                    stability=settings_stability, similarity_boost=settings_similarity_boost, style=settings_style, use_speaker_boost=True
+                )
+            else:
+                voice_settings = selected_voice.settings
+
+            audio_data = self.client.generate(text=text.strip(),
+                                              voice=self.elevenlabslib.Voice(
+                                                  voice_id=selected_voice.voice_id,
+                                                  settings=voice_settings
+                                              ),
+                                              output_format="mp3_44100_128",
+                                              model=model_id,
+                                              )
+
+            if isinstance(audio_data, Iterator):
+                audio_data = b"".join(audio_data)
 
             # convert TTS to wav
             raw_data = io.BytesIO()
             save_audio_bytes(audio_data, raw_data, "wav")
 
             # call custom plugin event method
-            plugin_audio = Plugins.plugin_custom_event_call('plugin_tts_after_audio', {'audio': raw_data, 'sample_rate': self.source_sample_rate})
+            plugin_audio = Plugins.plugin_custom_event_call('plugin_tts_after_audio',
+                                                            {'audio': raw_data, 'sample_rate': self.source_sample_rate})
             if plugin_audio is not None and 'audio' in plugin_audio and plugin_audio['audio'] is not None:
                 raw_data = plugin_audio['audio']
 
@@ -261,15 +345,14 @@ class ElevenlabsTTSPlugin(Plugins.Base):
     def generate_tts_streamed(self, text):
         if len(text.strip()) == 0:
             return None
-        #voice_name = self.get_plugin_setting("voice", "Bella")
         voice_name = settings.GetOption("tts_voice")
-        voice_index = self.get_plugin_setting("voice_index", 0)
         model_id = self.get_plugin_setting("model_id", "eleven_multilingual_v1")
         stability = self.get_plugin_setting("voice_stability", None)
         similarity_boost = self.get_plugin_setting("voice_similarity_boost", None)
+        style = self.get_plugin_setting("voice_style", None)
+        optimize_streaming_latency = self.get_latency_optimization_value(self.get_plugin_setting("optimize_streaming_latency"))
 
-        #if self.client is None or voice_name is None:
-        if voice_name is None or voice_name == "" or self.elevenlabslib is None:
+        if voice_name is None or voice_name == "" or self.elevenlabslib is None or self.client is None:
             print("No API instance or voice name set")
             return
 
@@ -277,23 +360,33 @@ class ElevenlabsTTSPlugin(Plugins.Base):
         try:
             selected_voice = self._get_voices_by_name(voice_name)
 
-            voice_settings = selected_voice.fetch_settings()
-            if stability is not None:
-                voice_settings.stability = float(stability)
-            if similarity_boost is not None:
-                voice_settings.similarity_boost = float(similarity_boost)
+            if selected_voice.settings is None:
+                settings_stability = 0.71
+                settings_similarity_boost = 0.5
+                settings_style = 0.0
+                if stability is not None and float(stability) > -0.01:
+                    settings_stability = float(stability)
+                if similarity_boost is not None and float(similarity_boost) > -0.01:
+                    settings_similarity_boost = float(similarity_boost)
+                if style is not None and float(style) > -0.01:
+                    settings_style = float(style)
 
-            audio_data_stream = self.elevenlabslib.generate(text=text.strip(),
-                                               voice=self.elevenlabslib.Voice(
-                                                   voice_id=selected_voice.voice_id,
-                                                   settings=voice_settings
-                                               ),
-                                               model=model_id,
-                                               output_format="pcm_24000",
-                                               latency=1,
-                                               stream=True,
-                                               stream_chunk_size=2048,
-                                               )
+                voice_settings = self.elevenlabslib.VoiceSettings(
+                    stability=settings_stability, similarity_boost=settings_similarity_boost, style=settings_style, use_speaker_boost=True
+                )
+            else:
+                voice_settings = selected_voice.settings
+
+            audio_data_stream = self.client.generate(text=text.strip(),
+                                                     voice=self.elevenlabslib.Voice(
+                                                         voice_id=selected_voice.voice_id,
+                                                         settings=voice_settings
+                                                     ),
+                                                     model=model_id,
+                                                     output_format="pcm_24000",
+                                                     stream=True,
+                                                     optimize_streaming_latency=optimize_streaming_latency,
+                                                     )
             # Iterate over the audio chunks
             for chunk in audio_data_stream:
                 self.audio_streamer.add_audio_chunk(chunk)
@@ -332,12 +425,14 @@ class ElevenlabsTTSPlugin(Plugins.Base):
 
         #self.audio_streamer.start_playback()
 
-
-    def play_audio_on_device(self, wav, audio_device, source_sample_rate=24000, audio_device_channel_num=2, target_channels=2, input_channels=1, dtype="int16"):
+    def play_audio_on_device(self, wav, audio_device, source_sample_rate=24000, audio_device_channel_num=2,
+                             target_channels=2, input_channels=1, dtype="int16"):
         secondary_audio_device = None
         if settings.GetOption("tts_use_secondary_playback") and (
-                (settings.GetOption("tts_secondary_playback_device") == -1 and audio_device != settings.GetOption("device_default_out_index")) or
-                (settings.GetOption("tts_secondary_playback_device") > -1 and audio_device != settings.GetOption("tts_secondary_playback_device"))):
+                (settings.GetOption("tts_secondary_playback_device") == -1 and audio_device != settings.GetOption(
+                    "device_default_out_index")) or
+                (settings.GetOption("tts_secondary_playback_device") > -1 and audio_device != settings.GetOption(
+                    "tts_secondary_playback_device"))):
             secondary_audio_device = settings.GetOption("tts_secondary_playback_device")
             if secondary_audio_device == -1:
                 secondary_audio_device = settings.GetOption("device_default_out_index")
