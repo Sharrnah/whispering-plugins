@@ -1,6 +1,6 @@
 # <img src=https://github.com/Sharrnah/whispering-ui/blob/main/app-icon.png width=90> Plugins for Whispering Tiger
 
-Current list of plugins that are available for [Whispering Tiger](https://github.com/Sharrnah/whispering).
+Current list of plugins that are available for [Whispering Tiger](https://github.com/Sharrnah/whispering-ui).
 
 _If you have created a plugin, please add it to this list using a pull request or let me know and I will add it._
 
