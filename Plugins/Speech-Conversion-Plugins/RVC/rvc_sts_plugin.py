@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.5
+# V1.1.6
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -65,13 +65,20 @@ rmvpe_model = {
     ],
     "sha256": "63d9f0b001eb0749a0ec6a7f12d7b5193b1b54a1a259fcfc4201eb81d7dc0627"
 }
+rmvpe_onnx_model = {
+    "urls": [
+        "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/rvc-plugin/rmvpe_onnx_model.zip",
+        "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/rvc-plugin2/rmvpe_onnx_model.zip"
+    ],
+    "sha256": "c2a18baef37bd1cf00e0b8bcc716404ecc18e14e50ba1748b8f88634ab9b1f2f"
+}
 
 rvc_infer_script = {
     "urls": [
         "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/rvc-plugin/rvc_infer.py",
         "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/rvc-plugin2/rvc_infer.py"
     ],
-    "sha256": "652b85bdfb9d6190cf75443f00064b9f5039fce975fac0ccdbaae5fde8f8df46"
+    "sha256": "1f494df7d44033d22017b06c2966725c713b8b0c9756768ae0625868a4283686"
 }
 rvc_realtime_infer_script = {
     "urls": [
@@ -177,7 +184,7 @@ class RVCStsPlugin(Plugins.Base):
                 "model_load_btn": {"label": "Load model", "type": "button", "style": "primary"},
                 "half_precision": False,
                 "device": {"type": "select", "value": "cpu:0",
-                           "values": ["cpu:0", "cpu:1", "cpu:2", "cuda:0", "cuda:1", "cuda:2"]},
+                           "values": ["cpu:0", "cpu:1", "cpu:2", "cuda:0", "cuda:1", "cuda:2", "direct-ml:0", "direct-ml:1", "direct-ml:2"]},
                 "result_noise_filter": False,
                 "unload_on_finish": False,
                 "debug": False,
@@ -269,6 +276,21 @@ class RVCStsPlugin(Plugins.Base):
                                             ),
                                             title="rmvpe model", extract_format="zip")
 
+            if not Path(rvc_models_path / "rmvpe" / "rmvpe.onnx").is_file():
+                print("rmvpe onnx model downloading...")
+                # download from random url in list
+                rmvpe_model_url = random.choice(rmvpe_onnx_model["urls"])
+                downloader.download_extract([rmvpe_model_url],
+                                            str(Path(rvc_models_path / "rmvpe").resolve()),
+                                            rmvpe_onnx_model["sha256"],
+                                            alt_fallback=True,
+                                            fallback_extract_func=downloader.extract_zip,
+                                            fallback_extract_func_args=(
+                                                str(Path(rvc_models_path / "rmvpe" / os.path.basename(rmvpe_model_url)).resolve()),
+                                                str(Path(rvc_models_path / "rmvpe").resolve()),
+                                            ),
+                                            title="rmvpe onnx model", extract_format="zip")
+
             sys.path.append(str(rvc_sts_plugin_dir.resolve()))
             sys.path.append(os.path.join(rvc_sts_plugin_dir, "Retrieval-based-Voice-Conversion-WebUI"))
 
@@ -279,6 +301,14 @@ class RVCStsPlugin(Plugins.Base):
             device = self.get_plugin_setting("device")
             # is_half = True
             is_half = self.get_plugin_setting("half_precision")
+
+            if isinstance(device, str) and device.startswith("direct-ml"):
+                device_id = 0
+                device_id_split = device.split(":")
+                if len(device_id_split) > 1:
+                    device_id = int(device_id_split[1])
+                import torch_directml
+                device = torch_directml.device(device_id)
 
             #
             #self.gui_config = GUIConfig()
@@ -580,6 +610,14 @@ class RVCStsPlugin(Plugins.Base):
         # f0method = "harvest"  # harvest or pm
         self.f0method = self.get_plugin_setting("f0method")  # harvest or pm
         device = self.get_plugin_setting("device")
+
+        if isinstance(device, str) and device.startswith("direct-ml"):
+            device_id = 0
+            device_id_split = device.split(":")
+            if len(device_id_split) > 1:
+                device_id = int(device_id_split[1])
+            import torch_directml
+            device = torch_directml.device(device_id)
         self.device = device
 
         rvc_path = self.get_plugin_setting("model_file")
@@ -912,6 +950,27 @@ class RVCStsPlugin(Plugins.Base):
                                                            "data": "Model loaded."}))
                     pass
                 if message["value"] == "convert_btn":
+                    if self.vc_single is None:
+                        from rvc_infer import get_vc, vc_single, release_model
+
+                        # device = "cuda:0"
+                        device = self.get_plugin_setting("device")
+                        # is_half = True
+                        is_half = self.get_plugin_setting("half_precision")
+                        rvc_path = self.get_plugin_setting("model_file")
+
+                        if isinstance(device, str) and device.startswith("direct-ml"):
+                            device_id = 0
+                            device_id_split = device.split(":")
+                            if len(device_id_split) > 1:
+                                device_id = int(device_id_split[1])
+                            import torch_directml
+                            device = torch_directml.device(device_id)
+
+                        self.vc_single = vc_single
+                        self.release_model = release_model
+                        get_vc(rvc_path, device, is_half)
+
                     input_sample_rate = 16000
                     audio_file = self.get_plugin_setting("audio_file")
                     audio_data = self.load_audio_file(audio_file)
