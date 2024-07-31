@@ -1,11 +1,12 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.30
+# V0.3.31
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
 import base64
+import hashlib
 import io
 import json
 import random
@@ -220,6 +221,8 @@ class BarkTTSPlugin(Plugins.Base):
 
     stop_batch_processing = False
 
+    default_chunk_backup_dir = Path(bark_plugin_dir / "chunk_backups")
+
     def get_plugin(self, class_name):
         for plugin_inst in Plugins.plugins:
             if plugin_inst.__class__.__name__ == class_name:
@@ -403,6 +406,7 @@ class BarkTTSPlugin(Plugins.Base):
                     "label": "stable_frequency\n0 = each continuation uses the history prompt of the previous.\n1 = each generation uses same history prompt.\n2+ = each *n generation uses the first history prompt.",
                     "type": "label", "style": "left"},
                 "custom_split_characters": ",",
+                "chunk_backups_dir": {"type": "dir_open", "accept": "", "value": str(self.default_chunk_backup_dir.resolve())},
 
                 "use_offload_cpu": True,
                 "use_small_models": True,
@@ -465,7 +469,7 @@ class BarkTTSPlugin(Plugins.Base):
                             "validate_generated_audio", "validate_max_distance_threshold", "validate_max_retries"],
                 "Long Text Gen.": ["long_text", "long_text_stable_frequency", "long_text_stable_frequency_info",
                                    "long_text_split_pause", "split_character_goal_length", "split_character_max_length",
-                                   "split_character_jitter", "use_previous_history_for_last_segment", "custom_split_characters"],
+                                   "split_character_jitter", "use_previous_history_for_last_segment", "custom_split_characters", "chunk_backups_dir"],
                 "History Prompt": ["write_last_history_prompt", "write_last_history_prompt_file"],
                 "Voice Cloning": ["clone_voice_audio_filepath", "clone_voice_prompt", "zz_clone_voice_button"],
                 "Model Settings": ["use_offload_cpu", "use_small_models", "use_gpu", "use_vocos",
@@ -909,6 +913,17 @@ class BarkTTSPlugin(Plugins.Base):
             if not silent:
                 print(f"audio_segments: {total_segments}")
 
+            # prepare chunks backup directory
+            chunk_backup_dir = self.get_plugin_setting("chunk_backups_dir")
+            chunk_backup_process_dir = Path(chunk_backup_dir)
+            if chunk_backup_dir is not None and chunk_backup_dir != "":
+                hash_text = hashlib.sha256(text.encode()).hexdigest()
+                chunk_backup_process_dir = Path(Path(chunk_backup_dir) / hash_text)
+                os.makedirs(chunk_backup_process_dir, exist_ok=True)
+                # write prompt text to file
+                with open(str(chunk_backup_process_dir.resolve()) + "/prompt.txt", "w", encoding='utf-8') as f:
+                    f.write(text)
+
             history_prompt_for_next_segment = history_prompt
 
             for i, segment_text in enumerate(audio_segments):
@@ -917,6 +932,13 @@ class BarkTTSPlugin(Plugins.Base):
                     is_stopping = True
                     print("long text generating stopped.")
                     break
+
+                # read already generated chunks from backup directory
+                if chunk_backup_dir is not None and chunk_backup_dir != "":
+                    chunk_file = Path(chunk_backup_process_dir / (str(i)+".npy"))
+                    if chunk_file.is_file():
+                        audio_arr_segments.append(np.load(str(chunk_file.resolve())))
+                        continue
 
                 estimated_time = self.bark_module.estimate_spoken_time(segment_text)
 
@@ -957,9 +979,14 @@ class BarkTTSPlugin(Plugins.Base):
                                                                                                 history_prompt=history_prompt_for_next_segment,
                                                                                                 silent=(display_long_text_progress or silent),
                                                                                                 )
-
-                    audio_data_np_array = self.audio_processing(audio_data_np_array,
+                    try:
+                        audio_data_np_array = self.audio_processing(audio_data_np_array,
                                                                 skip_infinity_lufs=skip_infinity_lufs)
+                    except ValueError as e:
+                        print("audio_data_np_array:")
+                        print(audio_data_np_array)
+                        print(f"Error processing audio: {e}\nretrying...")
+                        continue
 
                     if not silent:
                         print(f"attempt: {retry_num} of {validate_max_retries}")
@@ -1003,6 +1030,10 @@ class BarkTTSPlugin(Plugins.Base):
 
                 end_time = time.time()
                 segment_times.append(end_time - start_time)
+
+                # write numpy array to backup directory
+                if chunk_backup_dir is not None and chunk_backup_dir != "":
+                    np.save(str(chunk_file.resolve()), audio_data_np_array)
 
             if self.get_plugin_setting("use_vocos_on_result"):
                 vocos_segments = []
@@ -1163,9 +1194,6 @@ class BarkTTSPlugin(Plugins.Base):
                 print(f"Audio generation finished. (stopped){total_time_string}")
 
         return buff.getvalue()
-
-    def timer(self):
-        pass
 
     def play_audio_on_device(self, wav, audio_device, source_sample_rate=24000, audio_device_channel_num=2,
                              target_channels=2, dtype="int16"):
