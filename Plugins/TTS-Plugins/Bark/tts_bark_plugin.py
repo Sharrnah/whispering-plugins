@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.31
+# V0.3.32
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -407,6 +407,10 @@ class BarkTTSPlugin(Plugins.Base):
                     "type": "label", "style": "left"},
                 "custom_split_characters": ",",
                 "chunk_backups_dir": {"type": "dir_open", "accept": "", "value": str(self.default_chunk_backup_dir.resolve())},
+                "chunk_backups_continue": True,
+                "chunk_backups_desc": {
+                    "label": "chunk_bakups will save each generated chunk into the directory specified by chunk_backups_dir.\nIf enabled, it will continue from the last chunk if available.",
+                    "type": "label", "style": "left"},
 
                 "use_offload_cpu": True,
                 "use_small_models": True,
@@ -469,7 +473,7 @@ class BarkTTSPlugin(Plugins.Base):
                             "validate_generated_audio", "validate_max_distance_threshold", "validate_max_retries"],
                 "Long Text Gen.": ["long_text", "long_text_stable_frequency", "long_text_stable_frequency_info",
                                    "long_text_split_pause", "split_character_goal_length", "split_character_max_length",
-                                   "split_character_jitter", "use_previous_history_for_last_segment", "custom_split_characters", "chunk_backups_dir"],
+                                   "split_character_jitter", "use_previous_history_for_last_segment", "custom_split_characters", "chunk_backups_dir", "chunk_backups_continue", "chunk_backups_desc"],
                 "History Prompt": ["write_last_history_prompt", "write_last_history_prompt_file"],
                 "Voice Cloning": ["clone_voice_audio_filepath", "clone_voice_prompt", "zz_clone_voice_button"],
                 "Model Settings": ["use_offload_cpu", "use_small_models", "use_gpu", "use_vocos",
@@ -914,11 +918,12 @@ class BarkTTSPlugin(Plugins.Base):
                 print(f"audio_segments: {total_segments}")
 
             # prepare chunks backup directory
-            chunk_backup_dir = self.get_plugin_setting("chunk_backups_dir")
-            chunk_backup_process_dir = Path(chunk_backup_dir)
-            if chunk_backup_dir is not None and chunk_backup_dir != "":
+            chunk_backups_dir = self.get_plugin_setting("chunk_backups_dir")
+            chunk_backups_continue = self.get_plugin_setting("chunk_backups_continue")
+            chunk_backup_process_dir = Path(chunk_backups_dir)
+            if chunk_backups_continue and chunk_backups_dir is not None and chunk_backups_dir != "":
                 hash_text = hashlib.sha256(text.encode()).hexdigest()
-                chunk_backup_process_dir = Path(Path(chunk_backup_dir) / hash_text)
+                chunk_backup_process_dir = Path(Path(chunk_backups_dir) / hash_text)
                 os.makedirs(chunk_backup_process_dir, exist_ok=True)
                 # write prompt text to file
                 with open(str(chunk_backup_process_dir.resolve()) + "/prompt.txt", "w", encoding='utf-8') as f:
@@ -934,8 +939,9 @@ class BarkTTSPlugin(Plugins.Base):
                     break
 
                 # read already generated chunks from backup directory
-                if chunk_backup_dir is not None and chunk_backup_dir != "":
-                    chunk_file = Path(chunk_backup_process_dir / (str(i)+".npy"))
+                if chunk_backups_continue and chunk_backups_dir is not None and chunk_backups_dir != "":
+                    hash_chunk_text = hashlib.sha256(segment_text.encode()).hexdigest()
+                    chunk_file = Path(chunk_backup_process_dir / (str(i)+"_"+hash_chunk_text+".npy"))
                     if chunk_file.is_file():
                         audio_arr_segments.append(np.load(str(chunk_file.resolve())))
                         continue
@@ -1032,7 +1038,7 @@ class BarkTTSPlugin(Plugins.Base):
                 segment_times.append(end_time - start_time)
 
                 # write numpy array to backup directory
-                if chunk_backup_dir is not None and chunk_backup_dir != "":
+                if chunk_backups_continue and chunk_backups_dir is not None and chunk_backups_dir != "":
                     np.save(str(chunk_file.resolve()), audio_data_np_array)
 
             if self.get_plugin_setting("use_vocos_on_result"):
