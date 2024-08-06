@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.6
+# Version 0.0.7
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -8,6 +8,7 @@ import base64
 import io
 import json
 import re
+import threading
 from typing import Union, BinaryIO
 
 import requests
@@ -171,15 +172,21 @@ class OpenAIAPIPlugin(Plugins.Base):
                 "stt_min_words": -1,
                 "stt_max_words": -1,
                 "stt_max_char_length": -1,
+
+                # Advanced settings
+                "api_key_translate_overwrite": {"type": "textfield", "value": "", "password": True},
+                "api_key_speech_to_text_overwrite": {"type": "textfield", "value": "", "password": True},
+                "api_key_text_to_speech_overwrite": {"type": "textfield", "value": "", "password": True},
             },
             settings_groups={
                 "General": ["api_key", "translate_enabled", "transcribe_audio_enabled", "tts_enabled"],
-                "Translate Text Settings": ["translate_api_endpoint", "translate_model",
+                "Translate Text": ["translate_api_endpoint", "translate_model",
                                             "translate_temperature", "translate_max_tokens", "translate_top_p"],
-                "Transcribe Audio Settings": ["audio_transcribe_api_endpoint",
+                "Speech-to-Text": ["audio_transcribe_api_endpoint",
                                               "audio_translate_api_endpoint", "audio_model"],
-                "Text-to-Speech Settings": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
+                "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
                                             "stt_min_words", "stt_max_words", "stt_max_char_length"],
+                "Advanced": ["api_key_translate_overwrite", "api_key_speech_to_text_overwrite", "api_key_text_to_speech_overwrite"]
             }
         )
 
@@ -209,6 +216,8 @@ class OpenAIAPIPlugin(Plugins.Base):
     def _translate_text_api(self, text, source_lang, target_lang):
         url = self.get_plugin_setting("translate_api_endpoint")
         api_key = self.get_plugin_setting("translate_api_key")
+        if self.get_plugin_setting("api_key_translate_overwrite") != "":
+            api_key = self.get_plugin_setting("api_key_translate_overwrite")
 
         model = self.get_plugin_setting("translate_model")
         temperature = float(self.get_plugin_setting("translate_temperature"))
@@ -272,6 +281,8 @@ class OpenAIAPIPlugin(Plugins.Base):
         audio_model = self.get_plugin_setting("audio_model")
 
         api_key = self.get_plugin_setting("api_key")
+        if self.get_plugin_setting("api_key_speech_to_text_overwrite") != "":
+            api_key = self.get_plugin_setting("api_key_speech_to_text_overwrite")
 
         headers = {
             'Authorization': f'Bearer {api_key}',
@@ -324,6 +335,8 @@ class OpenAIAPIPlugin(Plugins.Base):
         url = self.get_plugin_setting("tts_api_endpoint")
         tts_model = self.get_plugin_setting("tts_model")
         api_key = self.get_plugin_setting("api_key")
+        if self.get_plugin_setting("api_key_text_to_speech_overwrite") != "":
+            api_key = self.get_plugin_setting("api_key_text_to_speech_overwrite")
         tts_voice = self.get_plugin_setting("tts_voice")
         tts_speed = self.get_plugin_setting("tts_speed")
 
@@ -368,6 +381,7 @@ class OpenAIAPIPlugin(Plugins.Base):
                 text=text, source_lang=from_code, target_lang=to_code
             )
             return translated_text, detected_language.lower(), to_code
+        return "", "", ""
 
     def return_translation_languages(self):
         return tuple([{"code": language, "name": language} for language in LLM_LANGUAGES])
@@ -383,9 +397,7 @@ class OpenAIAPIPlugin(Plugins.Base):
         self.init()
         pass
 
-    def sts(self, wavefiledata, sample_rate):
-        if not self.is_enabled(False) or not self.get_plugin_setting("transcribe_audio_enabled"):
-            return
+    def process_speech_to_text(self, wavefiledata, sample_rate):
         task = settings.GetOption("whisper_task")
         language = settings.GetOption("current_language")
 
@@ -402,6 +414,14 @@ class OpenAIAPIPlugin(Plugins.Base):
             'type': "transcript",
             'language': source_language
         }))
+
+    def sts(self, wavefiledata, sample_rate):
+        if not self.is_enabled(False) or not self.get_plugin_setting("transcribe_audio_enabled"):
+            return
+        threading.Thread(
+            target=self.process_speech_to_text,
+            args=(wavefiledata, sample_rate,)
+        ).start()
         return
 
     def stt(self, text, result_obj):
