@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.9
+# Version 0.0.10
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -183,12 +183,13 @@ class OpenAIAPIPlugin(Plugins.Base):
             settings_groups={
                 "General": ["api_key", "translate_enabled", "transcribe_audio_enabled", "tts_enabled"],
                 "Translate Text": ["translate_api_endpoint", "translate_model",
-                                            "translate_temperature", "translate_max_tokens", "translate_top_p"],
+                                   "translate_temperature", "translate_max_tokens", "translate_top_p"],
                 "Speech-to-Text": ["audio_transcribe_api_endpoint",
-                                              "audio_translate_api_endpoint", "audio_model"],
+                                   "audio_translate_api_endpoint", "audio_model"],
                 "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
-                                            "stt_min_words", "stt_max_words", "stt_max_char_length"],
-                "Advanced": ["api_key_translate_overwrite", "api_key_speech_to_text_overwrite", "api_key_text_to_speech_overwrite"]
+                                   "stt_min_words", "stt_max_words", "stt_max_char_length"],
+                "Advanced": ["api_key_translate_overwrite", "api_key_speech_to_text_overwrite",
+                             "api_key_text_to_speech_overwrite"]
             }
         )
 
@@ -197,13 +198,15 @@ class OpenAIAPIPlugin(Plugins.Base):
                 # disable txt-translator AI model if plugin is enabled
                 settings.SetOption("txt_translator", "")
                 # send available languages for text translation
-                websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_translation_languages()}))
+                websocket.BroadcastMessage(
+                    json.dumps({"type": "installed_languages", "data": self.return_translation_languages()}))
             if self.get_plugin_setting("transcribe_audio_enabled"):
                 # disable speech-to-text AI model if plugin is enabled
                 settings.SetOption("stt_type", "")
                 # send available languages for speech-to-text
                 settings.SetOption("whisper_languages", self.whisper_get_languages())
-                websocket.BroadcastMessage(json.dumps({"type": "translate_settings", "data": settings.SETTINGS.get_all_settings()}))
+                websocket.BroadcastMessage(
+                    json.dumps({"type": "translate_settings", "data": settings.SETTINGS.get_all_settings()}))
             if self.get_plugin_setting("tts_enabled"):
                 # disable speech-to-text AI model if plugin is enabled
                 settings.SetOption("tts_enabled", False)
@@ -217,7 +220,7 @@ class OpenAIAPIPlugin(Plugins.Base):
 
     def _translate_text_api(self, text, source_lang, target_lang):
         url = self.get_plugin_setting("translate_api_endpoint")
-        api_key = self.get_plugin_setting("translate_api_key")
+        api_key = self.get_plugin_setting("api_key")
         if self.get_plugin_setting("api_key_translate_overwrite") != "":
             api_key = self.get_plugin_setting("api_key_translate_overwrite")
 
@@ -254,7 +257,7 @@ class OpenAIAPIPlugin(Plugins.Base):
         if response.status_code != 200:
             websocket.BroadcastMessage(json.dumps({"type": "error", "data": "Error translating text (" + str(
                 response.status_code) + "): " + response.text}))
-            return ""
+            return "", ""
 
         response_json = response.json()
         translated_text = response_json['choices'][0]["message"]["content"]
@@ -422,7 +425,7 @@ class OpenAIAPIPlugin(Plugins.Base):
         # translate using text translator if enabled
         # translate text realtime or after audio is finished
         do_txt_translate = settings.GetOption("txt_translate")
-        if do_txt_translate :
+        if do_txt_translate:
             from_lang = settings.GetOption("src_lang")
             to_lang = settings.GetOption("trg_lang")
             to_romaji = settings.GetOption("txt_romaji")
@@ -432,7 +435,7 @@ class OpenAIAPIPlugin(Plugins.Base):
             result_obj["txt_translation_source"] = txt_from_lang
             result_obj["txt_translation_target"] = to_lang
 
-        websocket.BroadcastMessage(json.dumps(result_obj))
+        # websocket.BroadcastMessage(json.dumps(result_obj))
 
         send_osc_message(predicted_text, result_obj, True, settings.SETTINGS, None)
 
@@ -446,7 +449,8 @@ class OpenAIAPIPlugin(Plugins.Base):
         return
 
     def stt(self, text, result_obj):
-        if self.is_enabled(False) and settings.GetOption("tts_answer") and self.get_plugin_setting("tts_enabled") and text.strip() != "":
+        if self.is_enabled(False) and settings.GetOption("tts_answer") and self.get_plugin_setting(
+                "tts_enabled") and text.strip() != "":
             audio_device = settings.GetOption("device_out_index")
             if audio_device is None or audio_device == -1:
                 audio_device = settings.GetOption("device_default_out_index")
