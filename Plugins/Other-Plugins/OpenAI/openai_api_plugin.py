@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.8
+# Version 0.0.9
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -16,12 +16,14 @@ import soundfile
 
 import Plugins
 import audio_tools
+from audioprocessor import send_message as send_osc_message
 import settings
 
 import websocket
 
 from whisper.tokenizer import LANGUAGES
 
+from Models.TextTranslation import texttranslate
 
 LLM_LANGUAGES = [
     "Albanian",
@@ -409,11 +411,30 @@ class OpenAIAPIPlugin(Plugins.Base):
         if transcribed_text == "" and source_language == "":
             return
 
-        websocket.BroadcastMessage(json.dumps({
+        predicted_text = transcribed_text
+
+        result_obj = {
             'text': transcribed_text,
             'type': "transcript",
             'language': source_language
-        }))
+        }
+
+        # translate using text translator if enabled
+        # translate text realtime or after audio is finished
+        do_txt_translate = settings.GetOption("txt_translate")
+        if do_txt_translate :
+            from_lang = settings.GetOption("src_lang")
+            to_lang = settings.GetOption("trg_lang")
+            to_romaji = settings.GetOption("txt_romaji")
+            predicted_text, txt_from_lang, txt_to_lang = texttranslate.TranslateLanguage(transcribed_text, from_lang,
+                                                                                         to_lang, to_romaji)
+            result_obj["txt_translation"] = predicted_text
+            result_obj["txt_translation_source"] = txt_from_lang
+            result_obj["txt_translation_target"] = to_lang
+
+        websocket.BroadcastMessage(json.dumps(result_obj))
+
+        send_osc_message(predicted_text, result_obj, True, settings.SETTINGS, None)
 
     def sts(self, wavefiledata, sample_rate):
         if not self.is_enabled(False) or not self.get_plugin_setting("transcribe_audio_enabled"):
