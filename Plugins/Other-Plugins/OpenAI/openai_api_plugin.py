@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.5
+# Version 0.0.6
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -177,7 +177,7 @@ class OpenAIAPIPlugin(Plugins.Base):
                 "Translate Text Settings": ["translate_api_endpoint", "translate_model",
                                             "translate_temperature", "translate_max_tokens", "translate_top_p"],
                 "Transcribe Audio Settings": ["audio_transcribe_api_endpoint",
-                                              "audio_transcribe_api_endpoint", "audio_model"],
+                                              "audio_translate_api_endpoint", "audio_model"],
                 "Text-to-Speech Settings": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
                                             "stt_min_words", "stt_max_words", "stt_max_char_length"],
             }
