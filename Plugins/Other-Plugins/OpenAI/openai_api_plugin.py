@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.10
+# Version 0.0.11
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -9,14 +9,15 @@ import io
 import json
 import re
 import threading
+import time
 from typing import Union, BinaryIO
 
 import requests
 import soundfile
 
 import Plugins
+import VRC_OSCLib
 import audio_tools
-from audioprocessor import send_message as send_osc_message
 import settings
 
 import websocket
@@ -402,6 +403,120 @@ class OpenAIAPIPlugin(Plugins.Base):
         self.init()
         pass
 
+    def _replace_osc_placeholders(self, text, result_obj, settings):
+        txt_translate_enabled = settings.GetOption("txt_translate")
+        whisper_task = settings.GetOption("whisper_task")
+
+        # replace \n with new line
+        text = text.replace("\\n", "\n")
+
+        # replace {src} with source language
+        if "language" in result_obj and result_obj["language"] is not None:
+            text = text.replace("{src}", result_obj["language"])
+        elif "language" in result_obj and result_obj["language"] is None:
+            text = text.replace("{src}", "?")
+
+        if txt_translate_enabled and "txt_translation" in result_obj and "txt_translation_target" in result_obj:
+            # replace {trg} with target language
+            target_language = texttranslate.iso3_to_iso1(result_obj["txt_translation_target"])
+            if target_language is None:
+                target_language = result_obj["txt_translation_target"]
+            if target_language is not None:
+                text = text.replace("{trg}", target_language)
+        else:
+            if "target_lang" in result_obj and result_obj["target_lang"] is not None:
+                # replace {trg} with target language of whisper
+                text = text.replace("{trg}", result_obj["target_lang"])
+            elif whisper_task == "transcribe":
+                # replace {trg} with target language of whisper
+                if "language" in result_obj and result_obj["language"] is not None:
+                    text = text.replace("{trg}", result_obj["language"])
+            elif whisper_task == "translate":
+                # replace {trg} with target language of whisper
+                text = text.replace("{trg}", "en")
+            else:
+                text = text.replace("{trg}", "?")
+        return text
+
+    def _send_message(self, predicted_text, result_obj, final_audio, settings, plugins):
+        osc_ip = settings.GetOption("osc_ip")
+        osc_address = settings.GetOption("osc_address")
+        osc_port = settings.GetOption("osc_port")
+
+        # Update osc_min_time_between_messages option
+        VRC_OSCLib.set_min_time_between_messages(settings.GetOption("osc_min_time_between_messages"))
+
+        # WORKAROUND: prevent it from outputting the initial prompt.
+        if predicted_text == settings.GetOption("initial_prompt"):
+            return
+
+        # Send over OSC
+        if osc_ip != "0" and settings.GetOption("osc_auto_processing_enabled") and predicted_text != "":
+            osc_notify = final_audio and settings.GetOption("osc_typing_indicator")
+
+            osc_send_type = settings.GetOption("osc_send_type")
+            osc_chat_limit = settings.GetOption("osc_chat_limit")
+            osc_time_limit = settings.GetOption("osc_time_limit")
+            osc_scroll_time_limit = settings.GetOption("osc_scroll_time_limit")
+            osc_initial_time_limit = settings.GetOption("osc_initial_time_limit")
+            osc_scroll_size = settings.GetOption("osc_scroll_size")
+            osc_max_scroll_size = settings.GetOption("osc_max_scroll_size")
+            osc_type_transfer_split = settings.GetOption("osc_type_transfer_split")
+            osc_type_transfer_split = self._replace_osc_placeholders(osc_type_transfer_split, result_obj, settings)
+
+            osc_text = predicted_text
+            if settings.GetOption("osc_type_transfer") == "source":
+                osc_text = result_obj["text"]
+            elif settings.GetOption("osc_type_transfer") == "both":
+                osc_text = result_obj["text"] + osc_type_transfer_split + predicted_text
+            elif settings.GetOption("osc_type_transfer") == "both_inverted":
+                osc_text = predicted_text + osc_type_transfer_split + result_obj["text"]
+
+            message = self._replace_osc_placeholders(settings.GetOption("osc_chat_prefix"), result_obj, settings) + osc_text
+
+            # delay sending message if it is the final audio and until TTS starts playing
+            if final_audio and settings.GetOption("osc_delay_until_audio_playback"):
+                # wait until is_audio_playing is True or timeout is reached
+                delay_timeout = time.time() + settings.GetOption("osc_delay_timeout")
+                tag = settings.GetOption("osc_delay_until_audio_playback_tag")
+                tts_answer = settings.GetOption("tts_answer")
+                if tag == "tts" and tts_answer:
+                    while not audio_tools.is_audio_playing(tag=tag) and time.time() < delay_timeout:
+                        time.sleep(0.05)
+
+            if osc_send_type == "full":
+                VRC_OSCLib.Chat(message, True, osc_notify, osc_address,
+                                IP=osc_ip, PORT=osc_port,
+                                convert_ascii=settings.GetOption("osc_convert_ascii"))
+            elif osc_send_type == "chunks":
+                VRC_OSCLib.Chat_chunks(message,
+                                       nofify=osc_notify, address=osc_address, ip=osc_ip, port=osc_port,
+                                       chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                       initial_delay=osc_initial_time_limit,
+                                       convert_ascii=settings.GetOption("osc_convert_ascii"))
+            elif osc_send_type == "scroll":
+                VRC_OSCLib.Chat_scrolling_chunks(message,
+                                                 nofify=osc_notify, address=osc_address, ip=osc_ip, port=osc_port,
+                                                 chunk_size=osc_max_scroll_size, delay=osc_scroll_time_limit,
+                                                 initial_delay=osc_initial_time_limit,
+                                                 scroll_size=osc_scroll_size,
+                                                 convert_ascii=settings.GetOption("osc_convert_ascii"))
+            elif osc_send_type == "full_or_scroll":
+                # send full if message fits in osc_chat_limit, otherwise send scrolling chunks
+                if len(message.encode('utf-16le')) <= osc_chat_limit * 2:
+                    VRC_OSCLib.Chat(message, True, osc_notify, osc_address,
+                                    IP=osc_ip, PORT=osc_port,
+                                    convert_ascii=settings.GetOption("osc_convert_ascii"))
+                else:
+                    VRC_OSCLib.Chat_scrolling_chunks(message,
+                                                     nofify=osc_notify, address=osc_address, ip=osc_ip, port=osc_port,
+                                                     chunk_size=osc_chat_limit, delay=osc_scroll_time_limit,
+                                                     initial_delay=osc_initial_time_limit,
+                                                     scroll_size=osc_scroll_size,
+                                                     convert_ascii=settings.GetOption("osc_convert_ascii"))
+
+            settings.SetOption("plugin_timer_stopped", True)
+
     def process_speech_to_text(self, wavefiledata, sample_rate):
         task = settings.GetOption("whisper_task")
         language = settings.GetOption("current_language")
@@ -435,9 +550,9 @@ class OpenAIAPIPlugin(Plugins.Base):
             result_obj["txt_translation_source"] = txt_from_lang
             result_obj["txt_translation_target"] = to_lang
 
-        # websocket.BroadcastMessage(json.dumps(result_obj))
+        websocket.BroadcastMessage(json.dumps(result_obj))
 
-        send_osc_message(predicted_text, result_obj, True, settings.SETTINGS, None)
+        self._send_message(predicted_text, result_obj, True, settings.SETTINGS, None)
 
     def sts(self, wavefiledata, sample_rate):
         if not self.is_enabled(False) or not self.get_plugin_setting("transcribe_audio_enabled"):
