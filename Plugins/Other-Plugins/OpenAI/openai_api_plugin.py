@@ -621,20 +621,24 @@ class OpenAIAPIPlugin(Plugins.Base):
     def stt(self, text, result_obj):
         if self.is_enabled(False) and settings.GetOption("tts_answer") and self.get_plugin_setting(
                 "tts_enabled") and text.strip() != "":
+            streamed_playback = self.get_plugin_setting("streamed_playback")
             audio_device = settings.GetOption("device_out_index")
             if audio_device is None or audio_device == -1:
                 audio_device = settings.GetOption("device_default_out_index")
 
             if self.word_char_count_allowed(text.strip()):
-                wav = self._tts_api(text.strip())
-                if wav is not None:
-                    self.play_audio_on_device(wav, audio_device,
-                                              source_sample_rate=self.tts_source_sample_rate,
-                                              audio_device_channel_num=self.tts_target_channels,
-                                              target_channels=self.tts_target_channels,
-                                              input_channels=self.tts_input_channels,
-                                              dtype=self.tts_source_dtype
-                                              )
+                if not streamed_playback:
+                    wav = self._tts_api(text.strip())
+                    if wav is not None:
+                        self.play_audio_on_device(wav, audio_device,
+                                                  source_sample_rate=self.tts_source_sample_rate,
+                                                  audio_device_channel_num=self.tts_target_channels,
+                                                  target_channels=self.tts_target_channels,
+                                                  input_channels=self.tts_input_channels,
+                                                  dtype=self.tts_source_dtype
+                                                  )
+                else:
+                    self._tts_api_streamed(text.strip())
         return
 
     def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
