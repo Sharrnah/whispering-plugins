@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.11
+# Version 0.0.12
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -130,6 +130,8 @@ class OpenAIAPIPlugin(Plugins.Base):
     tts_input_channels = 1
     tts_target_channels = 2
 
+    audio_streamer = None
+
     def init(self):
         # prepare all possible settings
         self.init_plugin_settings(
@@ -175,6 +177,7 @@ class OpenAIAPIPlugin(Plugins.Base):
                 "stt_min_words": -1,
                 "stt_max_words": -1,
                 "stt_max_char_length": -1,
+                "streamed_playback": False,
 
                 # Advanced settings
                 "api_key_translate_overwrite": {"type": "textfield", "value": "", "password": True},
@@ -188,7 +191,7 @@ class OpenAIAPIPlugin(Plugins.Base):
                 "Speech-to-Text": ["audio_transcribe_api_endpoint",
                                    "audio_translate_api_endpoint", "audio_model"],
                 "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
-                                   "stt_min_words", "stt_max_words", "stt_max_char_length"],
+                                   "stt_min_words", "stt_max_words", "stt_max_char_length", "streamed_playback"],
                 "Advanced": ["api_key_translate_overwrite", "api_key_speech_to_text_overwrite",
                              "api_key_text_to_speech_overwrite"]
             }
@@ -377,6 +380,58 @@ class OpenAIAPIPlugin(Plugins.Base):
             raw_data = plugin_audio['audio']
 
         return raw_data.getvalue()
+
+
+    def init_audio_stream_playback(self):
+        audio_device = settings.GetOption("device_out_index")
+        if audio_device is None or audio_device == -1:
+            audio_device = settings.GetOption("device_default_out_index")
+
+        if self.audio_streamer is None:
+            self.audio_streamer = audio_tools.AudioStreamer(audio_device,
+                                                            source_sample_rate=self.tts_source_sample_rate,
+                                                            playback_channels=2,
+                                                            buffer_size=2048,
+                                                            input_channels=1,
+                                                            dtype="int16",
+                                                            tag="tts",
+                                                            )
+
+    def _tts_api_streamed(self, text):
+        url = self.get_plugin_setting("tts_api_endpoint")
+        tts_model = self.get_plugin_setting("tts_model")
+        api_key = self.get_plugin_setting("api_key")
+        if self.get_plugin_setting("api_key_text_to_speech_overwrite") != "":
+            api_key = self.get_plugin_setting("api_key_text_to_speech_overwrite")
+        tts_voice = self.get_plugin_setting("tts_voice")
+        tts_speed = self.get_plugin_setting("tts_speed")
+
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+        data = {
+            'model': tts_model,
+            'input': text,
+            'voice': tts_voice,
+            'speed': tts_speed,
+            'response_format': "pcm",
+        }
+
+        response = requests.post(url, headers=headers, data=json.dumps(data), stream=True)
+        if response.status_code != 200:
+            websocket.BroadcastMessage(json.dumps({"type": "error", "data": "Error generating TTS audio (" + str(
+                response.status_code) + "): " + response.text}))
+            return ""
+
+        self.init_audio_stream_playback()
+        try:
+            # Stream the audio in chunks
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    self.audio_streamer.add_audio_chunk(chunk)
+        except Exception as e:
+            print(e)
 
     def text_translate(self, text, from_code, to_code) -> tuple:
         """
@@ -584,32 +639,51 @@ class OpenAIAPIPlugin(Plugins.Base):
 
     def tts(self, text, device_index, websocket_connection=None, download=False, path=''):
         if self.is_enabled(False) and self.get_plugin_setting("tts_enabled"):
+            streamed_playback = self.get_plugin_setting("streamed_playback")
+
             if device_index is None or device_index == -1:
                 device_index = settings.GetOption("device_default_out_index")
 
-            wav = self._tts_api(text.strip())
-            if wav is not None:
-                if download:
-                    if path is not None and path != '':
-                        # write wav_data to file in path
-                        with open(path, "wb") as f:
-                            f.write(wav)
-                        websocket.BroadcastMessage(json.dumps({"type": "info",
-                                                               "data": "File saved to: " + path}))
+            if not streamed_playback:
+                wav = self._tts_api(text.strip())
+                if wav is not None:
+                    if download:
+                        if path is not None and path != '':
+                            # write wav_data to file in path
+                            with open(path, "wb") as f:
+                                f.write(wav)
+                            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                                   "data": "File saved to: " + path}))
+                        else:
+                            if websocket_connection is not None:
+                                wav_data = base64.b64encode(wav).decode('utf-8')
+                                websocket.AnswerMessage(websocket_connection,
+                                                        json.dumps({"type": "tts_save", "wav_data": wav_data}))
                     else:
-                        if websocket_connection is not None:
-                            wav_data = base64.b64encode(wav).decode('utf-8')
-                            websocket.AnswerMessage(websocket_connection,
-                                                    json.dumps({"type": "tts_save", "wav_data": wav_data}))
+                        self.play_audio_on_device(wav, device_index,
+                                                  source_sample_rate=self.tts_source_sample_rate,
+                                                  audio_device_channel_num=self.tts_target_channels,
+                                                  target_channels=self.tts_target_channels,
+                                                  input_channels=self.tts_input_channels,
+                                                  dtype=self.tts_source_dtype,
+                                                  )
+            else:
+                if download:
+                    wav = self._tts_api(text.strip())
+                    if wav is not None:
+                        if path is not None and path != '':
+                            # write wav_data to file in path
+                            with open(path, "wb") as f:
+                                f.write(wav)
+                            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                                   "data": "File saved to: " + path}))
+                        else:
+                            if websocket_connection is not None:
+                                wav_data = base64.b64encode(wav).decode('utf-8')
+                                websocket.AnswerMessage(websocket_connection,
+                                                        json.dumps({"type": "tts_save", "wav_data": wav_data}))
                 else:
-                    self.play_audio_on_device(wav, device_index,
-                                              source_sample_rate=self.tts_source_sample_rate,
-                                              audio_device_channel_num=self.tts_target_channels,
-                                              target_channels=self.tts_target_channels,
-                                              input_channels=self.tts_input_channels,
-                                              dtype=self.tts_source_dtype,
-                                              )
-
+                    self._tts_api_streamed(text.strip())
         return
 
 
