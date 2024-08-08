@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.4
+# V0.0.5
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -125,13 +125,15 @@ class ChatTTSPlugin(Plugins.Base):
     def init(self):
         self.init_plugin_settings(
             {
-                "speaker_file": {"type": "file_open", "accept": ".spk,.pt", "value": str(Path(self.speaker_dir / "my_speaker.spk").resolve())},
+                "speaker_file": {"type": "file_open", "accept": ".spk,.pt",
+                                 "value": str(Path(self.speaker_dir / "my_speaker.spk").resolve())},
                 "temperature": {"type": "slider", "min": 0.0001, "max": 1.0000, "step": 0.0001, "value": 0.0003},
                 "top_p": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.1, "value": 0.7},
                 "top_k": {"type": "slider", "min": 1, "max": 100, "step": 1, "value": 20},
                 "repetition_penalty": {"type": "slider", "min": 0.00, "max": 2.00, "step": 0.01, "value": 1.05},
                 "max_new_token": {"type": "slider", "min": 1, "max": 4000, "step": 1, "value": 2048},
                 "min_new_token": {"type": "slider", "min": 0, "max": 1000, "step": 1, "value": 0},
+                "speaker_file_convert_pt": {"label": "Convert .pt speaker file", "type": "button", "style": "default"},
 
                 "prompt": "",
                 "text_wrap": "#!# [uv_break]",
@@ -145,8 +147,10 @@ class ChatTTSPlugin(Plugins.Base):
                 "language": {"type": "select", "value": "Auto", "values": ["Auto", "en", "zh"]},
             },
             settings_groups={
-                "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token", "min_new_token"],
-                "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization", "do_homophone_replacement", "language"],
+                "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token",
+                            "min_new_token", "speaker_file_convert_pt"],
+                "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization",
+                            "do_homophone_replacement", "language"],
             }
         )
         if self.is_enabled(False):
@@ -288,9 +292,9 @@ class ChatTTSPlugin(Plugins.Base):
 
         params_infer_code = self.chattts_module.Chat.InferCodeParams(
             spk_emb=speaker,  # add sampled speaker
-            temperature=temperature,   # using custom temperature
-            top_P=top_p,        # top P decode
-            top_K=top_k,         # top K decode
+            temperature=temperature,  # using custom temperature
+            top_P=top_p,  # top P decode
+            top_K=top_k,  # top K decode
             repetition_penalty=repetition_penalty,
             max_new_token=max_new_token,
             min_new_token=min_new_token,
@@ -321,7 +325,8 @@ class ChatTTSPlugin(Plugins.Base):
         buff = io.BytesIO()
         audio_data = np.int16(wav_numpy * 32767)
 
-        torchaudio.save(buff, torch.from_numpy(audio_data), self.sample_rate, format="wav", encoding="PCM_S", bits_per_sample=16)
+        torchaudio.save(buff, torch.from_numpy(audio_data), self.sample_rate, format="wav", encoding="PCM_S",
+                        bits_per_sample=16)
 
         # call custom plugin event method
         plugin_audio = Plugins.plugin_custom_event_call('plugin_tts_after_audio',
@@ -331,16 +336,37 @@ class ChatTTSPlugin(Plugins.Base):
 
         return buff.getvalue()
 
-    def generate_speaker(self, speaker_file=None):
+    def generate_random_speaker(self, speaker_file=None):
         speaker = self.model.sample_random_speaker()
         #write speaker to text file for testing
         speaker_file_path = self.speaker_dir / speaker_file
+        self.save_speaker(speaker, speaker_file_path)
+        return speaker
 
-        if speaker_file is not None and isinstance(speaker_file, str):
-            with open(str(speaker_file_path), 'w', encoding='utf-8') as f:
+    def save_speaker(self, speaker_embedding_data: str | torch.Tensor | None = None, save_path: str | None = None):
+        """
+        Args:
+            speaker_embedding_data: text data or torch tensor of speaker embedding data
+            save_path: string of speaker file name to save to
+        """
+        speaker = None
+        if speaker_embedding_data is not None:
+            if isinstance(speaker_embedding_data, str):
+                speaker = speaker_embedding_data
+            elif isinstance(speaker_embedding_data, torch.Tensor):
+                speaker = self.convert_speaker(speaker_embedding_data)
+            else:
+                print("Speaker embedding data of unknown format.")
+        else:
+            print("Speaker embedding data is required to save speaker.")
+
+        if speaker is not None and save_path is not None and isinstance(save_path, str):
+            with open(str(save_path), 'w', encoding='utf-8') as f:
                 f.write(speaker)
                 f.close()
 
+    def convert_speaker(self, speaker_embedding: torch.Tensor | None = None):
+        speaker = self.model._encode_spk_emb(speaker_embedding)
         return speaker
 
     def load_speaker(self, speaker_file=None):
@@ -359,17 +385,20 @@ class ChatTTSPlugin(Plugins.Base):
                 device_index = settings.GetOption("device_default_out_index")
 
             speaker_file = self.get_plugin_setting("speaker_file")
-            if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(speaker_file).is_file():
+            if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(
+                    speaker_file).is_file():
                 if Path(speaker_file).suffix == ".pt":
                     spk_tensor = torch.load(speaker_file, map_location=torch.device('cpu')).detach()
-                    speaker = self.model._encode_spk_emb(spk_tensor)
+                    speaker = self.convert_speaker(spk_tensor)
+                    if not Path(speaker_file).with_suffix(".spk").is_file():
+                        self.save_speaker(spk_tensor, str(Path(speaker_file).with_suffix(".spk")))
                 elif Path(speaker_file).suffix == ".spk":
                     speaker = self.load_speaker(speaker_file)
                 else:
                     print(f"Invalid speaker file format. Expected '.pt' or '.spk'. Using random speaker.")
-                    speaker = self.generate_speaker(f'random_speaker.spk')
+                    speaker = self.generate_random_speaker(f'random_speaker.spk')
             else:
-                speaker = self.generate_speaker(f'random_speaker.spk')
+                speaker = self.generate_random_speaker(f'random_speaker.spk')
 
             wav_bytes = self.generate_tts(text.strip(), speaker=speaker)
             if wav_bytes is None:
@@ -404,17 +433,18 @@ class ChatTTSPlugin(Plugins.Base):
                 device_index = settings.GetOption("device_default_out_index")
 
             speaker_file = self.get_plugin_setting("speaker_file")
-            if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(speaker_file).is_file():
+            if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(
+                    speaker_file).is_file():
                 if Path(speaker_file).suffix == ".pt":
                     spk_tensor = torch.load(speaker_file, map_location=torch.device('cpu')).detach()
-                    speaker = self.model._encode_spk_emb(spk_tensor)
+                    speaker = self.convert_speaker(spk_tensor)
                 elif Path(speaker_file).suffix == ".spk":
                     speaker = self.load_speaker(speaker_file)
                 else:
                     print(f"Invalid speaker file format. Expected '.pt' or '.spk'. Using random speaker.")
-                    speaker = self.generate_speaker(f'random_speaker.spk')
+                    speaker = self.generate_random_speaker(f'random_speaker.spk')
             else:
-                speaker = self.generate_speaker(f'random_speaker.spk')
+                speaker = self.generate_random_speaker(f'random_speaker.spk')
 
             wav_bytes = self.generate_tts(text.strip(), speaker=speaker)
             if wav_bytes is None:
@@ -427,6 +457,23 @@ class ChatTTSPlugin(Plugins.Base):
                                       target_channels=2,
                                       dtype="int16"
                                       )
+
+    def on_event_received(self, message, websocket_connection=None):
+        if self.is_enabled(False):
+            if "type" not in message:
+                return
+            if message["type"] == "plugin_button_press":
+                if message["value"] == "speaker_file_convert_pt":
+                    speaker_file = self.get_plugin_setting("speaker_file")
+                    if Path(speaker_file).suffix == ".pt":
+                        spk_tensor = torch.load(speaker_file, map_location=torch.device('cpu')).detach()
+                        if not Path(speaker_file).with_suffix(".spk").is_file():
+                            self.save_speaker(spk_tensor, str(Path(speaker_file).with_suffix(".spk")))
+                            websocket.BroadcastMessage(
+                                json.dumps({"type": "info", "data": "Speaker saved as .spk file"}))
+                        else:
+                            websocket.BroadcastMessage(
+                                json.dumps({"type": "info", "data": "Speaker already exists as .spk file"}))
 
     def on_enable(self):
         self.init()
