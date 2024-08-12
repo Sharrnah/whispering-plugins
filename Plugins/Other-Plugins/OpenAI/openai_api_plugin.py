@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.12
+# Version 0.0.13
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -575,6 +575,12 @@ class OpenAIAPIPlugin(Plugins.Base):
     def process_speech_to_text(self, wavefiledata, sample_rate):
         task = settings.GetOption("whisper_task")
         language = settings.GetOption("current_language")
+
+        # Check if the audio is longer than 0.1 seconds
+        audio_duration = len(wavefiledata) / (sample_rate * 2)  # Assuming 16-bit (2 bytes) audio
+        if audio_duration <= 0.1:
+            print("audio shorter than 0.1 seconds. skipping...")
+            return
 
         # convert to wav
         raw_wav_data = audio_tools.audio_bytes_to_wav(wavefiledata, 1, sample_rate)
