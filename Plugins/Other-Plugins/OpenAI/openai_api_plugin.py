@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.13
+# Version 0.0.14
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -8,7 +8,6 @@ import base64
 import io
 import json
 import re
-import threading
 import time
 from typing import Union, BinaryIO
 
@@ -575,54 +574,34 @@ class OpenAIAPIPlugin(Plugins.Base):
     def process_speech_to_text(self, wavefiledata, sample_rate):
         task = settings.GetOption("whisper_task")
         language = settings.GetOption("current_language")
+        sample_width = 2  # 2 = 16bit, 4 = 32bit
 
         # Check if the audio is longer than 0.1 seconds
-        audio_duration = len(wavefiledata) / (sample_rate * 2)  # Assuming 16-bit (2 bytes) audio
+        audio_duration = len(wavefiledata) / (sample_rate * sample_width)
         if audio_duration <= 0.1:
             print("audio shorter than 0.1 seconds. skipping...")
-            return
+            return None
 
-        # convert to wav
-        raw_wav_data = audio_tools.audio_bytes_to_wav(wavefiledata, 1, sample_rate)
-
-        transcribed_text, source_language = self._transcribe_audio_api(raw_wav_data, task, language)
+        transcribed_text, source_language = self._transcribe_audio_api(wavefiledata, task, language)
 
         if transcribed_text == "" and source_language == "":
-            return
-
-        predicted_text = transcribed_text
+            return None
 
         result_obj = {
             'text': transcribed_text,
             'type': "transcript",
             'language': source_language
         }
+        return result_obj
 
-        # translate using text translator if enabled
-        # translate text realtime or after audio is finished
-        do_txt_translate = settings.GetOption("txt_translate")
-        if do_txt_translate:
-            from_lang = settings.GetOption("src_lang")
-            to_lang = settings.GetOption("trg_lang")
-            to_romaji = settings.GetOption("txt_romaji")
-            predicted_text, txt_from_lang, txt_to_lang = texttranslate.TranslateLanguage(transcribed_text, from_lang,
-                                                                                         to_lang, to_romaji)
-            result_obj["txt_translation"] = predicted_text
-            result_obj["txt_translation_source"] = txt_from_lang
-            result_obj["txt_translation_target"] = to_lang
-
-        websocket.BroadcastMessage(json.dumps(result_obj))
-
-        self._send_message(predicted_text, result_obj, True, settings.SETTINGS, None)
-
-    def sts(self, wavefiledata, sample_rate):
+    def stt_processing(self, audio_data, sample_rate, final_audio) -> dict|None:
         if not self.is_enabled(False) or not self.get_plugin_setting("transcribe_audio_enabled"):
-            return
-        threading.Thread(
-            target=self.process_speech_to_text,
-            args=(wavefiledata, sample_rate,)
-        ).start()
-        return
+            return None
+        if final_audio:
+            result_obj = self.process_speech_to_text(audio_data, sample_rate)
+            if result_obj is not None:
+                return result_obj
+        return None
 
     def stt(self, text, result_obj):
         if self.is_enabled(False) and settings.GetOption("tts_answer") and self.get_plugin_setting(
