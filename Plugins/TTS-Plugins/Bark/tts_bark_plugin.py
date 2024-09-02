@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.32
+# V0.3.34
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -25,6 +25,7 @@ import torchaudio
 import Plugins
 
 from scipy.io.wavfile import write as write_wav
+from scipy.signal import find_peaks
 
 from pathlib import Path
 import os
@@ -235,6 +236,30 @@ class BarkTTSPlugin(Plugins.Base):
         loudness = meter.integrated_loudness(audio)
         return loudness
 
+    def estimate_pitch(self, audio, sr, frame_size=2048, hop_size=512):
+        pitches = []
+        for i in range(0, len(audio) - frame_size, hop_size):
+            frame = audio[i:i + frame_size]
+            # Apply a window function to the frame
+            windowed = frame * np.hanning(len(frame))
+            # Compute the FFT
+            spectrum = np.fft.rfft(windowed)
+            # Compute the magnitude spectrum
+            magnitude = np.abs(spectrum)
+            # Find peaks in the magnitude spectrum
+            peaks, _ = find_peaks(magnitude)
+            if len(peaks) == 0:
+                continue
+            # Find the peak with the highest magnitude
+            peak = peaks[np.argmax(magnitude[peaks])]
+            # Convert the peak index to a frequency
+            pitch = peak * sr / frame_size
+            pitches.append(pitch)
+        return np.array(pitches)
+
+    def average_pitch(self, pitch_values):
+        return np.mean(pitch_values)
+
     # Function to normalize the audio based on LUFS
     def normalize_audio_lufs(self, audio, sample_rate, lower_threshold=-24.0, upper_threshold=-16.0, gain_factor=2.0):
         lufs = self.calculate_lufs(audio, sample_rate)
@@ -412,7 +437,7 @@ class BarkTTSPlugin(Plugins.Base):
                     "label": "chunk_bakups will save each generated chunk into the directory specified by chunk_backups_dir.\nIf enabled, it will continue from the last chunk if available.",
                     "type": "label", "style": "left"},
 
-                "use_offload_cpu": True,
+                "use_offload_cpu": False,
                 "use_small_models": True,
                 "use_half_precision": False,
                 #"use_mps": False,
@@ -465,12 +490,14 @@ class BarkTTSPlugin(Plugins.Base):
 
                 "validate_generated_audio": False,
                 "validate_max_distance_threshold": {"type": "slider", "min": 0, "max": 20, "step": 1, "value": 2},
-                "validate_max_retries": {"type": "slider", "min": 0, "max": 20, "step": 1, "value": 3},
+                "validate_max_retries": {"type": "slider", "min": 0, "max": 20, "step": 1, "value": 4},
+                "validate_voice_similarity": False,
+                "validate_voice_similarity_threshold": {"type": "slider", "min": 0, "max": 2000, "step": 1, "value": 800},
             },
             settings_groups={
                 "General": ["history_prompt", "prompt_wrap", "temperature_text", "temperature_waveform", "min_eos_p",
                             "min_eos_p_info", "seed",
-                            "validate_generated_audio", "validate_max_distance_threshold", "validate_max_retries"],
+                            "validate_generated_audio", "validate_max_distance_threshold", "validate_max_retries", "validate_voice_similarity", "validate_voice_similarity_threshold"],
                 "Long Text Gen.": ["long_text", "long_text_stable_frequency", "long_text_stable_frequency_info",
                                    "long_text_split_pause", "split_character_goal_length", "split_character_max_length",
                                    "split_character_jitter", "use_previous_history_for_last_segment", "custom_split_characters", "chunk_backups_dir", "chunk_backups_continue", "chunk_backups_desc"],
@@ -906,6 +933,10 @@ class BarkTTSPlugin(Plugins.Base):
             split_character_jitter = self.get_plugin_setting("split_character_jitter")
             use_previous_history_for_last_segment = self.get_plugin_setting("use_previous_history_for_last_segment")
             custom_split_characters = self.get_plugin_setting("custom_split_characters")
+            validate_voice_similarity = self.get_plugin_setting("validate_voice_similarity")
+            validate_voice_similarity_threshold = self.get_plugin_setting("validate_voice_similarity_threshold")
+
+            comparison_voice_pitch = None
 
             audio_segments = self.chunk_up_text(text,
                                                 split_character_goal_length=split_character_goal_length,
@@ -1004,8 +1035,23 @@ class BarkTTSPlugin(Plugins.Base):
                         levenshtein_threshold = int(self.get_plugin_setting("validate_max_distance_threshold"))
 
                         generated_text = self.transcribe(audio_data_np_array)
-                        if generated_text is not None and generated_text != "" and self._search_word_levenshtein(segment_text, generated_text,
-                                                                                        levenshtein_threshold):
+                        levenshtein_text_valid = self._search_word_levenshtein(segment_text, generated_text, levenshtein_threshold)
+
+                        voice_pitch_similar = True
+                        if validate_voice_similarity:
+                            if comparison_voice_pitch is None:
+                                voice_pitch_values = self.estimate_pitch(audio_data_np_array, self.sample_rate)
+                                comparison_voice_pitch = self.average_pitch(voice_pitch_values)
+                            else:
+                                voice_pitch_values = self.estimate_pitch(audio_data_np_array, self.sample_rate)
+                                avg_pitch = self.average_pitch(voice_pitch_values)
+                                pitch_difference = abs(comparison_voice_pitch - avg_pitch)
+                                print(f"voice pitch difference: {pitch_difference}")
+                                if pitch_difference > validate_voice_similarity_threshold:
+                                    voice_pitch_similar = False
+                                    print("voices too different in pitch. retrying...")
+
+                        if generated_text is not None and generated_text != "" and levenshtein_text_valid and voice_pitch_similar:
                             if not silent:
                                 print("Generated audio is valid")
                             break
