@@ -1,6 +1,6 @@
 # ============================================================
 # Deepgram API - Whispering Tiger Plugin
-# Version 0.0.1
+# Version 0.0.2
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -143,7 +143,7 @@ class DeepgramAPIPlugin(Plugins.Base):
         url = self.get_plugin_setting("audio_transcribe_api_endpoint")
         audio_model = self.get_plugin_setting("audio_model")
 
-        url = url + "?model=" + audio_model + "&smart_format=true&detect_language=true"
+        url = url + "?model=" + audio_model + "&encoding=linear16&sample_rate=16000&smart_format=true&detect_language=true"
 
         if language is not None and language != "" and language.lower() != "auto":
             url = url + "&language=" + language
