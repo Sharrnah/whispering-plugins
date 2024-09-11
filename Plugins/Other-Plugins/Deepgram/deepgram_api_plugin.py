@@ -1,6 +1,6 @@
 # ============================================================
 # Deepgram API - Whispering Tiger Plugin
-# Version 0.0.2
+# Version 0.0.3
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -20,9 +20,6 @@ import settings
 import websocket
 
 from whisper.tokenizer import LANGUAGES
-
-LLM_LANGUAGES = [
-]
 
 TTS_VOICES = [
     "aura-asteria-en",
@@ -143,10 +140,14 @@ class DeepgramAPIPlugin(Plugins.Base):
         url = self.get_plugin_setting("audio_transcribe_api_endpoint")
         audio_model = self.get_plugin_setting("audio_model")
 
-        url = url + "?model=" + audio_model + "&encoding=linear16&sample_rate=16000&smart_format=true&detect_language=true"
+        url = url + "?model=" + audio_model + "&encoding=linear16&sample_rate=16000&smart_format=true"
 
         if language is not None and language != "" and language.lower() != "auto":
             url = url + "&language=" + language
+        if audio_model.startswith("nova-2") and language is not None and language != "" and language.lower() == "auto":
+            url = url + "&language=multi"
+        if language is None or language == "" or language.lower() == "auto":
+            url = url + "&detect_language=true"
 
         api_key = self.get_plugin_setting("api_key")
 
@@ -162,7 +163,13 @@ class DeepgramAPIPlugin(Plugins.Base):
             return "", ""
 
         response_json = response.json()
-        source_language = response_json['results']["channels"][0]["detected_language"]
+        if language is not None and language != "" and language.lower() != "auto":
+            source_language = language
+        else:
+            if "detected_language" in response_json['results']["channels"][0]:
+                source_language = response_json['results']["channels"][0]["detected_language"]
+            else:
+                source_language = ""
         transcribed_text = response_json['results']["channels"][0]["alternatives"][0]["transcript"]
 
         return transcribed_text, source_language
