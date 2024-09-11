@@ -1,6 +1,6 @@
 # ============================================================
 # Subtitles Display Plugin for Whispering Tiger
-# V1.0.10
+# V1.0.11
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -218,7 +218,7 @@ class SubtitleDisplayPlugin(Plugins.Base):
         self.transcription_display_time = int(self.get_plugin_setting("transcription_display_time"))
 
         if self.transcription_keep_last and len(self.transcriptions) > 1 or not self.transcription_keep_last:
-            while self.transcriptions and (current_time - self.transcription_times[self.transcriptions[0]]) > self.transcription_display_time:
+            while self.transcriptions and self.transcriptions[0] in self.transcription_times and (current_time - self.transcription_times[self.transcriptions[0]]) > self.transcription_display_time:
                 old_transcription = self.transcriptions.popleft()
                 del self.transcription_times[old_transcription]
 
