@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.14
+# Version 0.0.15
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -105,6 +105,7 @@ LLM_LANGUAGES = [
     "Slovak",
     "Slovene",
     "Slovenian",
+    "Spanish",
     "Ukrainian",
     "Urdu",
     "Uzbek",
@@ -120,6 +121,17 @@ TTS_VOICES = [
     "onyx",
     "nova",
     "shimmer"
+]
+
+LLM_MODELS = [
+    'gpt-3.5-turbo',
+    'gpt-3.5',
+    'gpt-4o-mini',
+    'gpt-4-turbo',
+    'gpt-4',
+    'gpt-4o',
+    'o1-mini',
+    'o1-preview',
 ]
 
 
@@ -140,15 +152,8 @@ class OpenAIAPIPlugin(Plugins.Base):
                 # text translate settings
                 "translate_enabled": False,
                 "translate_api_endpoint": "https://api.openai.com/v1/chat/completions",
-                "translate_model": {"type": "select", "value": "gpt-3.5",
-                                    "values": [
-                                        'gpt-3.5-turbo',
-                                        'gpt-3.5',
-                                        'gpt-4o-mini',
-                                        'gpt-4-turbo',
-                                        'gpt-4',
-                                        'gpt-4o',
-                                    ]},
+                "translate_model": {"type": "select", "value": LLM_MODELS[0],
+                                    "values": LLM_MODELS},
                 "translate_temperature": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.01, "value": 0.7},
                 "translate_max_tokens": {"type": "slider", "min": 1, "max": 4096, "step": 1, "value": 64},
                 "translate_top_p": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.01, "value": 1},
@@ -178,6 +183,17 @@ class OpenAIAPIPlugin(Plugins.Base):
                 "stt_max_char_length": -1,
                 "streamed_playback": False,
 
+                # Chat
+                "chat_api_endpoint": "https://api.openai.com/v1/chat/completions",
+                "chat_system_prompt": {"type": "textarea", "rows": 5, "value": "You are a helpful assistant."},
+                "chat_model": {"type": "select", "value": LLM_MODELS[0],
+                                    "values": LLM_MODELS},
+                "chat_message": {"type": "textarea", "rows": 5, "value": ""},
+                "chat_message_send_btn": {"label": "send message", "type": "button", "style": "primary"},
+                "chat_temperature": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.01, "value": 0.7},
+                "chat_max_tokens": {"type": "slider", "min": 1, "max": 4096, "step": 1, "value": 128},
+                "chat_top_p": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.01, "value": 1},
+
                 # Advanced settings
                 "api_key_translate_overwrite": {"type": "textfield", "value": "", "password": True},
                 "api_key_speech_to_text_overwrite": {"type": "textfield", "value": "", "password": True},
@@ -191,6 +207,8 @@ class OpenAIAPIPlugin(Plugins.Base):
                                    "audio_translate_api_endpoint", "audio_model"],
                 "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
                                    "stt_min_words", "stt_max_words", "stt_max_char_length", "streamed_playback"],
+                "Chat": ["chat_api_endpoint", "chat_model", "chat_message", "chat_system_prompt", "chat_temperature",
+                         "chat_max_tokens", "chat_top_p", "chat_message_send_btn"],
                 "Advanced": ["api_key_translate_overwrite", "api_key_speech_to_text_overwrite",
                              "api_key_text_to_speech_overwrite"]
             }
@@ -252,7 +270,7 @@ class OpenAIAPIPlugin(Plugins.Base):
                 }
             ],
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "top_p": top_p
         }
 
@@ -674,6 +692,69 @@ class OpenAIAPIPlugin(Plugins.Base):
                 else:
                     self._tts_api_streamed(text.strip())
         return
+
+    def chat_message_process(self):
+        api_key = self.get_plugin_setting("api_key")
+        url = self.get_plugin_setting("chat_api_endpoint")
+        chat_system_prompt = self.get_plugin_setting("chat_system_prompt")
+        chat_message = self.get_plugin_setting("chat_message")
+        if chat_message == "":
+            return
+
+        model = self.get_plugin_setting("chat_model")
+        temperature = float(self.get_plugin_setting("chat_temperature"))
+        max_tokens = int(self.get_plugin_setting("chat_max_tokens"))
+        top_p = self.get_plugin_setting("chat_top_p")
+
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        data = {
+            'model': model,
+            'messages': [
+                {
+                    "role": "system",
+                    "content": chat_system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": chat_message
+                }
+            ],
+            "temperature": temperature,
+            "max_completion_tokens": max_tokens,
+            "top_p": top_p
+        }
+
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        if response.status_code != 200:
+            websocket.BroadcastMessage(json.dumps({"type": "error", "data": "Error translating text (" + str(
+                response.status_code) + "): " + response.text}))
+            return
+
+        response_json = response.json()
+        response_text = response_json['choices'][0]["message"]["content"]
+        if response_text.strip() == "":
+            return
+        settings.SetOption("websocket_final_messages", False)
+        result_obj = {
+            'text': chat_message,
+            'llm_answer': response_text,
+            'type': "llm_answer"
+        }
+        websocket.BroadcastMessage(json.dumps(result_obj))
+        settings.SetOption("websocket_final_messages", True)
+
+
+    def on_event_received(self, message, websocket_connection=None):
+        if "type" not in message:
+            return
+        if message["type"] == "plugin_button_press":
+            if message["value"] == "chat_message_send_btn":
+                self.chat_message_process()
+        pass
 
 
 def save_audio_bytes(audioData: bytes, saveLocation: Union[BinaryIO, str], outputFormat) -> None:
