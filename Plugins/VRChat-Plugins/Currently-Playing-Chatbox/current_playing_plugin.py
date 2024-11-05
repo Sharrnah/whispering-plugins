@@ -1,6 +1,6 @@
 # ============================================================
 # Shows currently playing Song over OSC using Whispering Tiger
-# Version 1.0.7
+# Version 1.0.8
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 import datetime
@@ -77,8 +77,12 @@ class CurrentPlayingPlugin(Plugins.Base):
             response = requests.get(api_url, params=params)
             if response.status_code == 200:
                 print("lyrics fetched.")
-                lyrics_data = response.json()
-                self.lyrics = self.parse_synced_lyrics(lyrics_data.get("syncedLyrics", ""))
+                try:
+                    lyrics_data = response.json()
+                    self.lyrics = self.parse_synced_lyrics(lyrics_data.get("syncedLyrics", ""))
+                except Exception as e:
+                    print("Failed to parse synced lyrics.")
+                    self.lyrics = None
             else:
                 print("lyrics fetch failed.")
                 self.lyrics = None
@@ -214,7 +218,6 @@ class CurrentPlayingPlugin(Plugins.Base):
                 if only_playing and status.playback_status.name == 'PLAYING' or not only_playing:
                     if display_lyrics and (self.current_song.get("title") == "" or self.current_song.get("title") != info.title) and (self.current_song.get("artist") == "" or self.current_song.get("artist") != info.artist):
                         self.current_song = {"title": info.title, "artist": info.artist, "album": info.album_title}
-                        print(self.current_song)
                         self.fetch_lyrics(info.title, info.artist, info.album_title)
                     if display_lyrics and self.lyrics is not None:
                         current_lyrics_line = f"\n{self.get_current_lyrics_line(playback_position.total_seconds(), display_lyrics_lines, progress_lyrics_character, progress_lyrics_next_character)}"
