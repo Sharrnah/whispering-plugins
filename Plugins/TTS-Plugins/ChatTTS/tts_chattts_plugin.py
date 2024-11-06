@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.5
+# V0.0.6
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -145,12 +145,19 @@ class ChatTTSPlugin(Plugins.Base):
                 "do_text_normalization": True,
                 "do_homophone_replacement": True,
                 "language": {"type": "select", "value": "Auto", "values": ["Auto", "en", "zh"]},
+                "device": {"type": "select", "value": "auto",
+                           "values": [
+                               "auto",
+                               "cpu:0", "cpu:1", "cpu:2",
+                               "cuda:0", "cuda:1", "cuda:2",
+                               #"direct-ml:0", "direct-ml:1", "direct-ml:2"  # direct-ml does not seem to work
+                           ]},
             },
             settings_groups={
                 "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token",
                             "min_new_token", "speaker_file_convert_pt"],
                 "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization",
-                            "do_homophone_replacement", "language"],
+                            "do_homophone_replacement", "language", "device"],
             }
         )
         if self.is_enabled(False):
@@ -189,7 +196,7 @@ class ChatTTSPlugin(Plugins.Base):
             self.chattts_module = self._module_loader(chattts_dependency_module, "main module", extract_format="zip")
 
             self.model = self.chattts_module.Chat()
-            self.model.load(custom_path=str(Path(plugin_dir / "models").resolve()), compile=False, source="custom")
+            self.model.load(custom_path=str(Path(plugin_dir / "models").resolve()), compile=False, source="custom", device=self._get_infer_device())
 
             print("ChatTTS loaded.")
 
@@ -199,6 +206,20 @@ class ChatTTSPlugin(Plugins.Base):
                 self.model.unload()
                 del self.model
                 print("ChatTTS unloaded.")
+
+    def _get_infer_device(self):
+        device_option = self.get_plugin_setting("device")
+        device = device_option
+        if isinstance(device_option, str) and (device_option == "cuda" or device_option == "auto"):
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if isinstance(device_option, str) and device_option.startswith("direct-ml"):
+            device_id = 0
+            device_id_split = device_option.split(":")
+            if len(device_id_split) > 1:
+                device_id = int(device_id_split[1])
+            import torch_directml
+            device = torch_directml.device(device_id)
+        return device
 
     def _module_loader(self, module_dict, title="", extract_format="zip", recursive=False):
         fallback_extract_func = downloader.extract_zip
@@ -257,7 +278,7 @@ class ChatTTSPlugin(Plugins.Base):
                                             ),
                                             title="ChatTTS - vocos module", extract_format="zip")
             vocos_module = load_module(str(Path(plugin_dir / vocos_dependency_module["path"]).resolve()))
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = self._get_infer_device()
             self.vocos = vocos_module.Vocos.from_pretrained("charactr/vocos-encodec-24khz").to(device)
 
     def generate_tts(self, text, speaker=None) -> torch.Tensor | None:
@@ -339,7 +360,7 @@ class ChatTTSPlugin(Plugins.Base):
     def generate_random_speaker(self, speaker_file=None):
         speaker = self.model.sample_random_speaker()
         #write speaker to text file for testing
-        speaker_file_path = self.speaker_dir / speaker_file
+        speaker_file_path = str(Path(self.speaker_dir / speaker_file).resolve())
         self.save_speaker(speaker, speaker_file_path)
         return speaker
 
@@ -385,10 +406,11 @@ class ChatTTSPlugin(Plugins.Base):
                 device_index = settings.GetOption("device_default_out_index")
 
             speaker_file = self.get_plugin_setting("speaker_file")
+            speaker = None
             if speaker_file is not None and isinstance(speaker_file, str) and speaker_file != "" and Path(
                     speaker_file).is_file():
                 if Path(speaker_file).suffix == ".pt":
-                    spk_tensor = torch.load(speaker_file, map_location=torch.device('cpu')).detach()
+                    spk_tensor = torch.load(speaker_file, map_location=self._get_infer_device()).detach()
                     speaker = self.convert_speaker(spk_tensor)
                     if not Path(speaker_file).with_suffix(".spk").is_file():
                         self.save_speaker(spk_tensor, str(Path(speaker_file).with_suffix(".spk")))
@@ -397,7 +419,9 @@ class ChatTTSPlugin(Plugins.Base):
                 else:
                     print(f"Invalid speaker file format. Expected '.pt' or '.spk'. Using random speaker.")
                     speaker = self.generate_random_speaker(f'random_speaker.spk')
-            else:
+
+            if speaker is None:
+                print(f"No speaker found in {speaker_file}. Using random speaker.")
                 speaker = self.generate_random_speaker(f'random_speaker.spk')
 
             wav_bytes = self.generate_tts(text.strip(), speaker=speaker)
