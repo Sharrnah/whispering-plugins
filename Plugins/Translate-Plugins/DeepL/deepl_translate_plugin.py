@@ -1,6 +1,6 @@
 # ============================================================
 # Translates Text using DeepL API - Whispering Tiger Plugin
-# Version 1.0.7
+# Version 1.0.8
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -11,6 +11,8 @@ import Plugins
 import settings
 
 import websocket
+import time
+import random
 
 DEEPL_ENDPOINTS = {
     "Free": "https://api-free.deepl.com/v2/translate",
@@ -19,6 +21,7 @@ DEEPL_ENDPOINTS = {
 }
 
 LANGUAGES = {
+    "AR": "Arabic",  # target language only
     "BG": "Bulgarian",
     "CS": "Czech",
     "DA": "Danish",
@@ -56,6 +59,9 @@ LANGUAGES = {
 
 
 class DeepLPlugin(Plugins.Base):
+    max_retries = 5
+    base_delay = 1
+
     def init(self):
         # prepare all possible settings
         self.init_plugin_settings(
@@ -77,6 +83,7 @@ class DeepLPlugin(Plugins.Base):
         if self.is_enabled(False):
             # disable txt-translator AI model if plugin is enabled
             settings.SetOption("txt_translator", '')
+            websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_languages()}))
 
     def _translate_text_api(self, text, source_lang, target_lang, auth_key):
         url = DEEPL_ENDPOINTS[self.get_plugin_setting("api")]
@@ -101,16 +108,34 @@ class DeepLPlugin(Plugins.Base):
         if source_lang is not None and '-' in source_lang:
             source_lang = source_lang.split('-')[0]
 
-        if source_lang is not None and source_lang not in ['auto', '']:
+        if source_lang is not None and source_lang.lower() not in ['auto', '']:
             data['source_lang'] = source_lang
 
         if formality is not None and formality not in ['default', '']:
             data['formality'] = formality
 
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        if response.status_code != 200:
-            websocket.BroadcastMessage(json.dumps({"type": "error", "data": "Error translating text ("+str(response.status_code)+"): " + response.text}))
+        response = None
+
+        for retry in range(self.max_retries):
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            if response.status_code == 200:
+                break
+            elif response.status_code == 429:
+                if retry < self.max_retries - 1:
+                    delay = (self.base_delay * 2 ** retry) + (random.randint(0, 1000) / 1000.0)
+                    websocket.BroadcastMessage(json.dumps({"type": "warning", "data": f"Rate limit reached. Retrying in {delay:.2f} seconds..."}))
+                    time.sleep(delay)
+                else:
+                    websocket.BroadcastMessage(json.dumps({"type": "error", "data": f"Max retries reached. Unable to translate text after {self.max_retries} attempts."}))
+                    return "", ""
+            else:
+                websocket.BroadcastMessage(json.dumps({"type": "error", "data": f"Error translating text ({response.status_code}): {response.text}"}))
+                return "", ""
+
+        if response is None or response.status_code != 200:
+            websocket.BroadcastMessage(json.dumps({"type": "error", "data": "Unexpected error occurred during translation."}))
             return "", ""
+
         response_json = response.json()
 
         # special case for DeepLX endpoint
@@ -147,6 +172,4 @@ class DeepLPlugin(Plugins.Base):
 
     def on_enable(self):
         self.init()
-        if self.is_enabled(False):
-            websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_languages()}))
         pass
