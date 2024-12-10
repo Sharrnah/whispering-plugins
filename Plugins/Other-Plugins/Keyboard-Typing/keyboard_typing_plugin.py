@@ -1,6 +1,6 @@
 # ============================================================
 # Keyboard Typing Plugin for Whispering Tiger
-# V1.0.6
+# V1.0.7
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -128,16 +128,45 @@ class KeyboardTypingPlugin(Plugins.Base):
         # type string
         elif isinstance(value, str):
             if not self.paused:
-                self.keyboard.write(value)
+                # DirectInput keyboard scan codes ( https://gist.github.com/dretax/fe37b8baf55bc30e9d63 )
+                if value.startswith('0x'):
+                    # split at a + to get 2 keys at the same time
+                    str_values = value.split("+")
+                    # press keys
+                    for str_value in str_values:
+                        hex_value = int(str_value, 16)
+                        PressKey(hex_value)
+                        time.sleep(0.1)
+
+                    # release keys again
+                    for str_value in str_values:
+                        hex_value = int(str_value, 16)
+                        ReleaseKey(hex_value)
+
+                else:
+                    self.keyboard.write(value)
         # type list of characters or strings
         elif isinstance(value, list):
+            do_release_keys = False
             # iterate through character list
             for char in value:
                 if not self.paused:
                     if isinstance(char, int):
                         self.keyboard.write(chr(char))
                     elif isinstance(char, str):
-                        self.keyboard.write(char)
+                        if char.startswith('0x'):
+                            do_release_keys = True
+                            hex_value = int(char, 16)
+                            PressKey(hex_value)
+                            time.sleep(0.1)
+                        else:
+                            self.keyboard.write(char)
+            if do_release_keys:
+                for char in value:
+                    if isinstance(char, str):
+                        if char.startswith('0x'):
+                            hex_value = int(char, 16)
+                            ReleaseKey(hex_value)
 
     def type_text(self, text):
         found, command_value = self.command_handler(text)
@@ -174,7 +203,7 @@ class KeyboardTypingPlugin(Plugins.Base):
                 "auto_chat_enabled": False,
                 "auto_chat_delay_seconds": {"type": "slider", "min": 0, "max": 5, "step": 0.01, "value": 0.0},
                 "auto_chat_options": {
-                    "pre_typing_key": "t",
+                    "pre_typing_key": "0x15",
                     "post_typing_key": [13, 10],
                 },
                 "commands": COMMANDS,
@@ -228,3 +257,54 @@ class KeyboardTypingPlugin(Plugins.Base):
 
     def on_disable(self):
         pass
+
+# ====================
+
+import ctypes
+
+SendInput = ctypes.windll.user32.SendInput
+
+# C struct redefinitions
+PUL = ctypes.POINTER(ctypes.c_ulong)
+class KeyBdInput(ctypes.Structure):
+    _fields_ = [("wVk", ctypes.c_ushort),
+                ("wScan", ctypes.c_ushort),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", PUL)]
+
+class HardwareInput(ctypes.Structure):
+    _fields_ = [("uMsg", ctypes.c_ulong),
+                ("wParamL", ctypes.c_short),
+                ("wParamH", ctypes.c_ushort)]
+
+class MouseInput(ctypes.Structure):
+    _fields_ = [("dx", ctypes.c_long),
+                ("dy", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong),
+                ("dwFlags", ctypes.c_ulong),
+                ("time",ctypes.c_ulong),
+                ("dwExtraInfo", PUL)]
+
+class Input_I(ctypes.Union):
+    _fields_ = [("ki", KeyBdInput),
+                ("mi", MouseInput),
+                ("hi", HardwareInput)]
+
+class Input(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong),
+                ("ii", Input_I)]
+
+def PressKey(hexKeyCode):
+    extra = ctypes.c_ulong(0)
+    ii_ = Input_I()
+    ii_.ki = KeyBdInput( 0, hexKeyCode, 0x0008, 0, ctypes.pointer(extra) )
+    x = Input( ctypes.c_ulong(1), ii_ )
+    ctypes.windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
+
+def ReleaseKey(hexKeyCode):
+    extra = ctypes.c_ulong(0)
+    ii_ = Input_I()
+    ii_.ki = KeyBdInput( 0, hexKeyCode, 0x0008 | 0x0002, 0, ctypes.pointer(extra) )
+    x = Input( ctypes.c_ulong(1), ii_ )
+    ctypes.windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
