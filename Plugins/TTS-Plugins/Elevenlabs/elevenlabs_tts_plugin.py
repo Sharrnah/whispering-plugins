@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.1
+# V1.1.2
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -53,10 +53,10 @@ def load_module(package_dir):
 
 
 elevenlabs_dependency_module = {
-    "url": "https://files.pythonhosted.org/packages/68/6f/30f2732eb6acf2fefef5b3fea204c452ca435efa2c29866b7c7f5391ed1b/elevenlabs-1.5.0-py3-none-any.whl",
-    "sha256": "cc28257ad535adf57fdc70c9a3b8ddd6c34166f310bbc11a733523894e73ceca",
+    "url": "https://files.pythonhosted.org/packages/48/43/77c7266f50b2e2eca5b155f15a35ef2a30cbd377d02a7f3ca32c077cb072/elevenlabs-1.50.3-py3-none-any.whl",
+    "sha256": "13622d27f5ccd4c8bc793abbc252d43cdddc261805f378ae9a032a6458687589",
     "path": "elevenlabs",
-    "version": "1.5.0"
+    "version": "1.50.3"
 }
 httpx_dependency_module = {
     "url": "https://files.pythonhosted.org/packages/41/7b/ddacf6dcebb42466abd03f368782142baa82e08fc0c1f8eaa05b4bae87d5/httpx-0.27.0-py3-none-any.whl",
@@ -191,9 +191,9 @@ class ElevenlabsTTSPlugin(Plugins.Base):
             {
                 # General
                 #"voice_index": 0,
-                "model_id": {"type": "select", "value": "eleven_multilingual_v1",
+                "model_id": {"type": "select", "value": "eleven_multilingual_v2",
                              "values": ["eleven_multilingual_v1", "eleven_multilingual_v2", "eleven_english_v2",
-                                        "eleven_turbo_v2", "eleven_turbo_v2_5", "eleven_monolingual_v1"]},
+                                        "eleven_turbo_v2", "eleven_turbo_v2_5", "eleven_flash_v2", "eleven_flash_v2_5", "eleven_monolingual_v1"]},
 
                 # Voice Settings
                 "voice_stability": {"type": "slider", "min": -0.01, "max": 1.00, "step": 0.01, "value": 0.71},
