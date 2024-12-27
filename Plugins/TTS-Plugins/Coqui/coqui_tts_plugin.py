@@ -1,6 +1,6 @@
 # ============================================================
 # Coqui Text to Speech Plugin for Whispering Tiger
-# V1.1.9
+# V1.1.10
 # Coqui: https://github.com/coqui-ai/TTS/
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -206,7 +206,7 @@ class CoquiTTSPlugin(Plugins.Base):
                                             title="Coqui TTS - app", extract_format="zip")
 
             # disable default tts engine
-            settings.SetOption("tts_enabled", False)
+            settings.SetOption("tts_type", "")
 
             if Path(coqui_tts_plugin_dir / coqui_tts_tool["path"] / "coqui-tts.exe").is_file():
                 self.run_process()

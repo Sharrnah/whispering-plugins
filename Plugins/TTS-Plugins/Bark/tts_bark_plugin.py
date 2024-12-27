@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.34
+# V0.3.35
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -520,7 +520,7 @@ class BarkTTSPlugin(Plugins.Base):
             model_cache_dir = Path(bark_plugin_dir / "bark_models")
 
             # disable default tts engine
-            settings.SetOption("tts_enabled", False)
+            settings.SetOption("tts_type", "")
 
             # torch backend settings
             torch.backends.cuda.matmul.allow_tf32 = True

@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.15
+# Version 0.0.16
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -228,9 +228,9 @@ class OpenAIAPIPlugin(Plugins.Base):
                 settings.SetOption("whisper_languages", self.whisper_get_languages())
                 websocket.BroadcastMessage(
                     json.dumps({"type": "translate_settings", "data": settings.SETTINGS.get_all_settings()}))
-            if self.get_plugin_setting("tts_enabled"):
+            if self.get_plugin_setting("tts_type") != "":
                 # disable speech-to-text AI model if plugin is enabled
-                settings.SetOption("tts_enabled", False)
+                settings.SetOption("tts_type", "")
 
     def whisper_get_languages(self):
         languages = {

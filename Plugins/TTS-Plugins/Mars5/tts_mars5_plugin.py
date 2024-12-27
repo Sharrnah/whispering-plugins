@@ -1,6 +1,6 @@
 # ============================================================
 # Mars5 Text to Speech Plugin for Whispering Tiger
-# V0.0.3
+# V0.0.4
 # Mars5: https://github.com/Camb-ai/MARS5-TTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -94,6 +94,7 @@ class Mars5TTSPlugin(Plugins.Base):
                 #"device": {"type": "select", "value": "Auto", "values": ["Auto", "CPU", "CUDA"]},
                 "reference_audio": {"type": "file_open", "accept": ".wav", "value": ""},
                 "reference_transcript": "",
+                "reference_info": {"label": "reference audio between 2-12 seconds.", "type": "label", "style": "center"},
 
                 # settings
                 "rep_penalty_window": {"type": "slider", "min": 1, "max": 200, "step": 1, "value": 100},
@@ -104,7 +105,7 @@ class Mars5TTSPlugin(Plugins.Base):
                 "max_prompt_dur": {"type": "slider", "min": 1, "max": 24, "step": 0.5, "value": 12.0},
             },
             settings_groups={
-                "General": ["reference_audio", "reference_transcript"],
+                "General": ["reference_audio", "reference_transcript", "reference_info"],
                 "Settings": ["rep_penalty_window", "top_k", "temperature", "freq_penalty", "timesteps", "max_prompt_dur"],
             }
         )
@@ -157,6 +158,9 @@ class Mars5TTSPlugin(Plugins.Base):
                                                            model='mars5_english',
                                                            #device=device,
                                                            )
+
+            # disable default tts engine
+            settings.SetOption("tts_type", "")
 
             self.sample_rate = self.model.sr
 

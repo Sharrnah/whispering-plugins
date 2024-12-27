@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.6
+# V0.0.7
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -197,6 +197,9 @@ class ChatTTSPlugin(Plugins.Base):
 
             self.model = self.chattts_module.Chat()
             self.model.load(custom_path=str(Path(plugin_dir / "models").resolve()), compile=False, source="custom", device=self._get_infer_device())
+
+            # disable default tts engine
+            settings.SetOption("tts_type", "")
 
             print("ChatTTS loaded.")
 

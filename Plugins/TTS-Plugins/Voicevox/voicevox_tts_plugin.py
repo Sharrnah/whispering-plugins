@@ -1,6 +1,6 @@
 # ============================================================
 # Voicevox Text to Speech Plugin for Whispering Tiger
-# V1.2.6
+# V1.2.7
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -188,7 +188,7 @@ class VoicevoxTTSPlugin(Plugins.Base):
 
         if self.is_enabled(False):
             # disable default tts engine
-            settings.SetOption("tts_enabled", False)
+            settings.SetOption("tts_type", "")
 
             self.acceleration_mode = self.get_plugin_setting("acceleration_mode", "CPU")
 

@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.2
+# V1.1.3
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -234,7 +234,7 @@ class ElevenlabsTTSPlugin(Plugins.Base):
             sys.path.append(str(elevenlabs_plugin_dir.resolve()))
 
             # disable default tts engine
-            settings.SetOption("tts_enabled", False)
+            settings.SetOption("tts_type", "")
 
             self._login()
         pass
