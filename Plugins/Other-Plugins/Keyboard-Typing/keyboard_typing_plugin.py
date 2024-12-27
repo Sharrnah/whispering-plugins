@@ -1,6 +1,6 @@
 # ============================================================
 # Keyboard Typing Plugin for Whispering Tiger
-# V1.0.8
+# V1.0.9
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -121,6 +121,7 @@ class KeyboardTypingPlugin(Plugins.Base):
         return found, command_value
 
     def type_custom(self, value):
+        typing_speed = self.get_plugin_setting("typing_speed")
         # type character
         if isinstance(value, int):
             if not self.paused:
@@ -150,7 +151,7 @@ class KeyboardTypingPlugin(Plugins.Base):
                             ReleaseKey(DI_KEY_CODE_LOOKUP[str_value])
 
                 else:
-                    self.keyboard.write(value)
+                    self.keyboard.write(value, delay=typing_speed)
         # type list of characters or strings
         elif isinstance(value, list):
             do_release_keys = False
@@ -170,7 +171,7 @@ class KeyboardTypingPlugin(Plugins.Base):
                             PressKey(DI_KEY_CODE_LOOKUP[char])
                             time.sleep(0.1)
                         else:
-                            self.keyboard.write(char)
+                            self.keyboard.write(char, delay=typing_speed)
             if do_release_keys:
                 for char in value:
                     if isinstance(char, str):
@@ -181,6 +182,7 @@ class KeyboardTypingPlugin(Plugins.Base):
                             ReleaseKey(DI_KEY_CODE_LOOKUP[char])
 
     def type_text(self, text):
+        typing_speed = self.get_plugin_setting("typing_speed")
         found, command_value = self.command_handler(text)
         if found:
             self.type_custom(command_value)
@@ -199,7 +201,7 @@ class KeyboardTypingPlugin(Plugins.Base):
                 if auto_chat_enabled:
                     self.type_custom(auto_chat_settings["pre_typing_key"])
                     time.sleep(auto_chat_delay_seconds)
-                self.keyboard.write(text)
+                self.keyboard.write(text, delay=typing_speed)
                 if auto_chat_enabled:
                     time.sleep(auto_chat_delay_seconds)
                     self.type_custom(auto_chat_settings["post_typing_key"])
@@ -213,20 +215,21 @@ class KeyboardTypingPlugin(Plugins.Base):
                 "levenshtein_max_distance_word_threshold": 1,
 
                 "auto_chat_enabled": False,
-                "auto_chat_delay_seconds": {"type": "slider", "min": 0, "max": 5, "step": 0.01, "value": 0.50},
+                "auto_chat_delay_seconds": {"type": "slider", "min": 0, "max": 5, "step": 0.01, "value": 0.10},
                 "auto_chat_options": {
-                    "pre_typing_key": "DI_Y",
-                    "post_typing_key": ["DI_RETURN", "DI_ESCAPE"],
+                    "pre_typing_key": "DI_RETURN",
+                    "post_typing_key": "DI_RETURN",
                 },
                 "auto_chat_zz_info": {
                     "label": "Use KeyCodes in Hex or with DI_ prefixes for DirectInput key presses., numbers for ASCII codes.\nDirectInput: 'DI_RETURN', 'DI_A' - 'DI_Z' ...,\nuse a list or combine with '+' to press multiple keys at once.",
                     "type": "label", "style": "left"},
                 "commands": COMMANDS,
                 "typing_initially_paused": False,
+                "typing_speed": {"type": "slider", "min": 0, "max": 5, "step": 0.01, "value": 0.03},
             },
             settings_groups={
                 "General": ["commands", "typing_initially_paused"],
-                "Advanced": ["levenshtein_max_distance_threshold", "levenshtein_max_distance_word_threshold"],
+                "Advanced": ["levenshtein_max_distance_threshold", "levenshtein_max_distance_word_threshold", "typing_speed"],
                 "Auto Chat": ["auto_chat_enabled", "auto_chat_options", "auto_chat_delay_seconds", "auto_chat_zz_info"]
             }
         )
