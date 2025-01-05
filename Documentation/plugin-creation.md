@@ -44,6 +44,8 @@ The `Base` class provides some helper methods to make it easier to write plugins
 
 `init_plugin_settings(self, settings, settings_groups=None)` - Prepare all possible plugin settings and their default values. This method must be called in the `init` method of the plugin. The `settings` parameter is a dictionary with the settings and their default values. The `settings_groups` parameter is an optional dictionary with the settings groups and the settings that belong to that group. The settings groups are used in the settings window to group the settings. If the `settings_groups` parameter is not provided no groups are displayed in the UI.
 
+using a 2 dimensional array per group will result in splitting the settings widgets into columns.
+
 **IMPORTANT: Settings that are not initialized with `init_plugin_settings` are deleted when calling `init_plugin_settings`, so make sure to define every setting your Plugin needs.**
 
 `get_plugin_setting(self, setting, default=None)` - Get a plugin setting from the settings file. If the setting is not yet in the settings file, the default value is used. (if default is not set, the default from _init_plugin_settings()_ is used)
@@ -146,6 +148,10 @@ class ExamplePlugin(Plugins.Base):
             settings_groups={
                 "General": ["osc_auto_processing_enabled", "tts_answer", "hello_world", "hello_world2", "homepage_link"],
                 "Second Group": ["more_settings_a", "more_settings_b", "more_settings_c", "more_settings_d"],
+                "2 Columns": [
+                    ["column1_setting_a", "column1_setting_b"], # Column 1
+                    ["column2_setting_a", "column2_setting_b"]  # Column 2
+                ],
             }
         )
         
