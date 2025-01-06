@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.8
+# V0.0.9
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -63,7 +63,7 @@ os.makedirs(plugin_dir, exist_ok=True)
 
 chattts_dependency_module = {
     "url": "https://github.com/Sharrnah/ChatTTS/archive/refs/heads/0.1.1_fix-eng-chars.zip",
-    "sha256": "67d683b140d802eba7db90f4fafcb9de52a91c674972e02560671fcc9d9afcf8",
+    "sha256": "ae5fac2f93c28be3e683ff6a08add7db63efb28752218d1d12521b1fb3d59d72",
     "path": "ChatTTS-0.1.1_fix-eng-chars/ChatTTS",
 }
 chattts_models = {
@@ -315,13 +315,14 @@ class ChatTTSPlugin(Plugins.Base):
             seed = random.randint(0, 2 ** 32 - 1)
         torch.manual_seed(seed)
 
-        # wrap text
-        if "#!#" in text_wrap:
-            text = text_wrap.replace("#!#", text)
-
         # replace all numbers with their word representations
         if do_number_replacement:
             text = self.replace_numbers(text, lang=language if language is not None else 'en')
+            print(text)
+
+        # wrap text
+        if "#!#" in text_wrap:
+            text = text_wrap.replace("#!#", text)
 
         params_refine_text = self.chattts_module.Chat.RefineTextParams(
             prompt=prompt,
