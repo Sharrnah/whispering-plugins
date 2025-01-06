@@ -1,6 +1,6 @@
 # ============================================================
 # Soundboard Plugin for Whispering Tiger
-# V0.0.4
+# V0.0.5
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -44,6 +44,7 @@ class SoundboardPlugin(Plugins.Base):
 
         grouped_sounds_buttons = {}
         sounds_buttons = {}
+        sounds_buttons_settings_groups = {}
 
         if self.is_enabled(False):
             # read soundboard_folder.txt file
@@ -61,27 +62,42 @@ class SoundboardPlugin(Plugins.Base):
                         original_group_name = os.path.relpath(root, sounds_folder)
                         display_group_name = "General" if original_group_name == "." else original_group_name.capitalize()
 
-                        if name.endswith(".wav"):
+                        if name.endswith(".wav") or name.endswith(".mp3"):
                             grouped_sounds_buttons.setdefault(display_group_name, []).append((btn_name, original_group_name))
-                        elif name.endswith(".mp3"):
-                            sound_mp3 = os.path.join(root, name)
-                            name_wav = name.replace(".mp3", ".wav")
-                            sound_wav = os.path.join(root, name_wav)
-                            if not os.path.exists(sound_wav):
-                                print(f"Could not find wav file: {sound_wav} - converting from mp3.")
-                                self.convert_mp3_to_wav(sound_mp3, sound_wav)
-                                grouped_sounds_buttons.setdefault(display_group_name, []).append(("sound_play_btn_" + name_wav, original_group_name))
                         else:
                             continue
 
             # flatten the dictionary to create all buttons
             for display_group, btn_data in grouped_sounds_buttons.items():
-                for btn_name, original_group_name in btn_data:
-                    label = btn_name.replace("sound_play_btn_", "").replace(".wav", "")
-                    value = os.path.join(sounds_folder, original_group_name, label + ".wav")
+                # Split the buttons into two columns
+                column1 = []
+                column2 = []
+                column3 = []
+                for index, (btn_name, original_group_name) in enumerate(btn_data):
+                    label = btn_name.replace("sound_play_btn_", "").replace(".wav", "").replace(".mp3", "")
+                    value = os.path.join(sounds_folder, original_group_name, btn_name.replace("sound_play_btn_", ""))
                     sounds_buttons[btn_name] = {
                         "label": label, "type": "button", "style": "primary", "value": value
                     }
+                    # Distribute buttons into columns
+                    if len(btn_data) > 20:
+                        if index % 3 == 0:
+                            column1.append(btn_name)
+                        elif index % 3 == 1:
+                            column2.append(btn_name)
+                        else:
+                            column3.append(btn_name)
+                    else:
+                        if index % 2 == 0:
+                            column1.append(btn_name)
+                        else:
+                            column2.append(btn_name)
+
+                # Update settings_groups with columns
+                if len(btn_data) > 20:
+                    sounds_buttons_settings_groups[display_group] = [column1, column2, column3]
+                else:
+                    sounds_buttons_settings_groups[display_group] = [column1, column2]
 
         # prepare all possible settings
         self.init_plugin_settings(
@@ -91,14 +107,15 @@ class SoundboardPlugin(Plugins.Base):
 
                 # Manage
                 "sounds_folder": {"type": "folder_open", "accept": "", "value": sounds_folder},
+                "sounds_volume": {"type": "slider", "min": 0.0, "max": 2.0, "step": 0.01, "value": 1.0},
                 "sounds_folder_save_button": {"label": "Save", "type": "button", "style": "primary"},
                 "stop_playing": {"label": "Stop playing", "type": "button", "style": "primary"},
                 "allow_overlapping_audio": False,
                 "download_soundpack_button": {"label": "Download Demo Soundpack (also resets to default sounds_folder)", "type": "button", "style": "primary", "value": "pack 1"},
             },
             settings_groups={
-                **{group: [btn_data[0] for btn_data in btn_list] for group, btn_list in grouped_sounds_buttons.items()},
-                "zz_Manage": ["sounds_folder", "sounds_folder_save_button", "stop_playing", "allow_overlapping_audio"],
+                **sounds_buttons_settings_groups,
+                "zz_Manage": ["sounds_folder", "sounds_folder_save_button", "stop_playing", "allow_overlapping_audio", "sounds_volume"],
                 "zz_Soundpacks": ["download_soundpack_button"]
             }
         )
@@ -128,6 +145,7 @@ class SoundboardPlugin(Plugins.Base):
 
     def on_event_received(self, message, websocket_connection=None):
         if self.is_enabled(False):
+            sounds_volume = self.get_plugin_setting("sounds_volume")
             if "type" not in message:
                 return
             if message["type"] == "plugin_button_press":
@@ -165,7 +183,19 @@ class SoundboardPlugin(Plugins.Base):
                 if message["value"].startswith("sound_play_btn_"):
                     sound = self.get_plugin_setting(message["value"])
                     if sound != "":
-                        wav_numpy = audio_tools.load_wav_to_bytes(sound, target_sample_rate=self.target_sample_rate)
+                        if sound.endswith(".wav"):
+                            wav_numpy = audio_tools.load_wav_to_bytes(sound, target_sample_rate=self.target_sample_rate)
+                        elif sound.endswith(".mp3"):
+                            mp3_file_obj = self.convert_mp3_to_wav(sound)
+                            wav_numpy = audio_tools.load_wav_to_bytes(mp3_file_obj, target_sample_rate=self.target_sample_rate)
+                        else:
+                            # unsupported file format
+                            return
+
+                        # change volume
+                        if sounds_volume != 1.0:
+                            wav_numpy = audio_tools.change_volume(wav_numpy, sounds_volume)
+
                         # Convert numpy array back to WAV bytes
                         with io.BytesIO() as byte_io:
                             soundfile.write(byte_io, wav_numpy, samplerate=self.target_sample_rate,
@@ -181,6 +211,13 @@ class SoundboardPlugin(Plugins.Base):
         else:
             websocket.BroadcastMessage(json.dumps({"type": "info", "data": "Plugin is disabled."}))
 
-    def convert_mp3_to_wav(self, mp3_path, wav_path):
+    def convert_file_mp3_to_wav(self, mp3_path, wav_path):
         audio = AudioSegment.from_mp3(mp3_path)
         audio.export(wav_path, format="wav")
+
+    def convert_mp3_to_wav(self, mp3_path):
+        audio = AudioSegment.from_mp3(mp3_path)
+        wav_io = io.BytesIO()
+        audio.export(wav_io, format="wav")
+        wav_io.seek(0)
+        return wav_io
