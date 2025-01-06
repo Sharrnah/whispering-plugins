@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.7
+# V0.0.8
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -10,6 +10,7 @@ import io
 import json
 import os
 import random
+import re
 import sys
 import traceback
 from importlib import util
@@ -17,6 +18,7 @@ import importlib
 import pkgutil
 from pathlib import Path
 
+import num2words
 import numpy as np
 import torch
 import torchaudio
@@ -110,7 +112,6 @@ encodec_dependency = {
     "path": "encodec-0.1.1/encodec"
 }
 
-
 class ChatTTSPlugin(Plugins.Base):
     chattts_module = None
 
@@ -144,6 +145,7 @@ class ChatTTSPlugin(Plugins.Base):
                 "skip_refine_text": False,
                 "do_text_normalization": True,
                 "do_homophone_replacement": True,
+                "do_number_replacement": True,
                 "language": {"type": "select", "value": "Auto", "values": ["Auto", "en", "zh"]},
                 "device": {"type": "select", "value": "auto",
                            "values": [
@@ -157,7 +159,7 @@ class ChatTTSPlugin(Plugins.Base):
                 "General": ["speaker_file", "temperature", "top_p", "top_k", "repetition_penalty", "max_new_token",
                             "min_new_token", "speaker_file_convert_pt"],
                 "Options": ["prompt", "text_wrap", "seed", "skip_refine_text", "do_text_normalization",
-                            "do_homophone_replacement", "language", "device"],
+                            "do_homophone_replacement", "do_number_replacement", "language", "device"],
             }
         )
         if self.is_enabled(False):
@@ -266,6 +268,12 @@ class ChatTTSPlugin(Plugins.Base):
             print(f"Failed to play audio on device: {e}")
             traceback.print_exc()
 
+    def replace_numbers(self, text, lang='en'):
+        def _replace_numbers(match):
+            return num2words.num2words(int(match.group(0)), lang=lang)
+
+        return re.sub(r'\d+', _replace_numbers, text)
+
     def _load_vocos_model(self):
         # load the vocos module (optional vocoder)
         if self.get_plugin_setting("use_vocos", True) and self.vocos is None:
@@ -298,6 +306,7 @@ class ChatTTSPlugin(Plugins.Base):
         skip_refine_text = self.get_plugin_setting("skip_refine_text", False)
         do_text_normalization = self.get_plugin_setting("do_text_normalization", True)
         do_homophone_replacement = self.get_plugin_setting("do_homophone_replacement", True)
+        do_number_replacement = self.get_plugin_setting("do_number_replacement", True)
         language = self.get_plugin_setting("language", None)
         if language is not None and (language == "" or language.lower() == "auto"):
             language = None
@@ -309,6 +318,10 @@ class ChatTTSPlugin(Plugins.Base):
         # wrap text
         if "#!#" in text_wrap:
             text = text_wrap.replace("#!#", text)
+
+        # replace all numbers with their word representations
+        if do_number_replacement:
+            text = self.replace_numbers(text, lang=language if language is not None else 'en')
 
         params_refine_text = self.chattts_module.Chat.RefineTextParams(
             prompt=prompt,
