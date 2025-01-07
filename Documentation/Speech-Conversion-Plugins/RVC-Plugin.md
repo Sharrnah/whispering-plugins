@@ -2,7 +2,7 @@
 
 The RVC Plugin allows to replace one voice with another. This means the input is an existing audio.
 
-(It is not Test-to-Speech which works with Text as Input and generates audio from this.)
+(It is not Text-to-Speech which works with Text as Input and generates audio from this.)
 
 You need a RVCv2 Model for this to work.
 
