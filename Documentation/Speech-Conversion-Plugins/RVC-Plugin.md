@@ -10,8 +10,8 @@ You need a RVCv2 Model for this to work.
 - Under the __General-Tab__, select the RVCv2 Model (and Index) file you want the voice to be converted into.
     - As `f0method` select `rmvpe` for best quality, or `crepe` (or others) for faster but lower quality.
     - Set `f0up_key` to a value that fits the convesion pitch. This is depending on the Input and Output Voice.
-    - lower (__~ -12__) if the voice conversion is female to male
-    - higher (__~ +12__) if the voice conversion is male to female
+    - lower (**~ -12**) if the voice conversion is female to male
+    - higher (**~ +12**) if the voice conversion is male to female
 - Under the __Audio conversion-Tab__, select the source from where you want to convert the voice from in `voice_change_source`.
     - `Own Voice` works by using Whispering Tigers audio recording logic. So same VAD, Speech Pause and Timelimit settings apply as when using Speech-to-Text models.
       
@@ -28,7 +28,7 @@ You need a RVCv2 Model for this to work.
   - `device` Select your GPU for best performance. If you have one GPU, select `cuda:0` if you have an NVIDIA GPU, or `direct-ml:0` or `direct-ml:1` for AMD/Intel.
 
     (Try to change this if it is too slow and does not seem to use the correct GPU, or you get the error `'RVC' object has no attribute 'tgt_sr'`)
-  - `half_precision` Enable this when using a GPU and to increase speed for slightly less quality.
+  - `half_precision` Enable this when using a GPU and to increase speed for slightly less quality and also less memory usage.
 - Under the __Realtime-Tab__ _(Only needed in Realtime mode)_
     - `rt_block_time` Is the audio block length. Lower values reduce the delay but increase the GPU usage and possibly lower the quality.
     - `rt_crossfade_time` is the time each block is faded over the next to make it more seamless.
