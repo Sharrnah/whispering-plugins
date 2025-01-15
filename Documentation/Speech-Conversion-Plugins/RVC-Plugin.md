@@ -39,6 +39,6 @@ You need a RVCv2 Model for this to work.
 
     Press the `start / restart / stop Realtime` Button to manually start the thread or restart when you changed some settings.
     
-    (_If you set `voice_change_source` from the _Audio conversion-Tab_ to ``Disabled` and press the `start / restart / stop Realtime` Button, it will stop the thread._)
+    (_If you set `voice_change_source` from the _Audio conversion-Tab_ to `Disabled` and press the `start / restart / stop Realtime` Button, it will stop the thread._)
 
 
