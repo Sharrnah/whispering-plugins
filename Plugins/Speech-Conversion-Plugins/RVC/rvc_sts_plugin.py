@@ -1038,7 +1038,8 @@ class RVCStsPlugin(Plugins.Base):
 
             if isinstance(audio_orig, torch.Tensor):
                 # back to float32
-                wav_rvc = audio_tools.convert_audio_datatype_to_float(wav_rvc)
+                if audio_orig.dtype == torch.float32:
+                    wav_rvc = audio_tools.convert_audio_datatype_to_float(wav_rvc)
                 # back to tensor
                 data_obj['audio'] = torch.from_numpy(wav_rvc)
             else:
