@@ -34,6 +34,7 @@ The format of the version line can start with `Version: `, `Version `, `V`, `V: 
 | `stt_intermediate(self, text, result_obj)`                                          | Optional    | is called when a live transcription result is available. Make sure to use the `stt` function for final results.                                                                                                                                                                                                            |
 | `stt_processing(self, audio_data, sample_rate, final_audio) -> dict (data_obj)`     | Optional    | is called when audio is recorded and no local Speech-to-Text model is loaded (useful for Speech-to-Text Plugins).<br>Needs to return a result object in the format:<br>`{'text': transcribed_text, 'type': "transcript", 'language': source_language}`<br>audio_data = raw 16 bit float mono audio<br>sample_rate = 16000. |
 | `tts(self, text, device_index, websocket_connection=None, download=False, path='')` | Optional    | is called when the TTS engine is about to play a result, except when called by the sst engine.<br>_if you want to play a sound when the Speech-to-Text engine returns a result, you should do it in the `stt` method as well. Path is set if the TTS request was to save the TTS result._                                  |
+| `get_last_generation(self) -> tuple (wav_bytes, sample_rate)`                       | Optional    | is called when the user requests the last generated TTS result.                                                                                                                                                                                                                                                            |
 | `sts(self, wavefiledata, sample_rate)`                                              | Optional    | is called when a recording is finished (which is sent to the Speech-to-Text model). This function gets the audio recording to be processed by the plugin.                                                                                                                                                                  |
 | `text_translate(self, text, from_code, to_code) -> tuple (txt, from_lang, to_lang)` | Optional    | is called when a translation is requested and no included translator is available.<br>_Must return a tuple of translation_text, from_lang_code, to_lang_code._                                                                                                                                                             |
 | `on_{event_name}_call(self, data_obj) -> dict (data_obj)`                           | Optional    | is called when a custom plugin event is called via `Plugins.plugin_custom_event_call(event_name, data_obj)`. See [Custom Plugin events](#Custom-Plugin-events) for more info.                                                                                                                                              |
@@ -130,6 +131,8 @@ import settings
 import VRC_OSCLib
 
 class ExamplePlugin(Plugins.Base):
+    last_generation = {"audio": None, "sample_rate": None}
+    
     def init(self):
         # prepare all possible plugin settings and their default values
         self.init_plugin_settings(
@@ -224,7 +227,13 @@ class ExamplePlugin(Plugins.Base):
                         f.write(wav)
                     websocket.BroadcastMessage(json.dumps({"type": "info",
                                                             "data": "File saved to: " + path}))
+            # save last generation in memory
+            self.last_generation = {"audio": wav, "sample_rate": sample_rate}
         return
+
+    # OPTIONAL - called to get last TTS result audio
+    def get_last_generation(self):
+        return self.last_generation["audio"], self.last_generation["sample_rate"]
     
     ## OPTIONAL - called when audio is finished recording and the audio is sent to the STT model
     def sts(self, wavefiledata, sample_rate):
