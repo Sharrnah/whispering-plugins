@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.1.6
+# V1.1.7
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -92,8 +92,7 @@ CONSTANTS = {
     "DISABLED": 'Disabled',
     "STS": 'Own Voice',
     "STS_RT": 'Own Voice (Realtime)',
-    "SILERO_TTS": 'Integrated Text-to-Speech (Silero TTS)',
-    "PLUGIN_TTS": 'Plugin Text-to-Speech',
+    "TTS": 'Text-to-Speech',
 }
 
 #sys.path.append(str(rvc_sts_plugin_dir.resolve()))
@@ -1013,51 +1012,46 @@ class RVCStsPlugin(Plugins.Base):
                         self.start_vc()
                     pass
 
-    def on_silero_tts_after_audio_call(self, data_obj):
-        if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["SILERO_TTS"] and self.model_file_valid(self.get_plugin_setting("model_file")):
-            audio = data_obj['audio']
-            sample_rate = 48000
-            # tensor to numpy
-            audio_tmp = audio.detach().cpu().numpy()
-            # from float32 to int16
-            audio_tmp = audio_tools.convert_audio_datatype_to_integer(audio_tmp)
-            # to bytes
-            buff = io.BytesIO()
-            write_wav(buff, sample_rate, audio_tmp)
-
-            audio_tmp = audio_tools.resample_audio(buff.read(), sample_rate, self.output_sample_rate, target_channels=1, input_channels=1, dtype="int16")
-            audio_tmp = self.do_conversion(audio_tmp, sample_rate, bytes_dtype="int16")
-            # back to float32
-            audio_tmp = audio_tools.convert_audio_datatype_to_float(audio_tmp)
-            # back to tensor
-            audio = torch.from_numpy(audio_tmp)
-
-            data_obj['audio'] = audio
-            return data_obj
-        return None
-
     def on_plugin_tts_after_audio_call(self, data_obj):
-        if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["PLUGIN_TTS"] and self.model_file_valid(self.get_plugin_setting("model_file")):
-            audio = data_obj['audio']
+        if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["TTS"] and self.model_file_valid(self.get_plugin_setting("model_file")):
+            audio_orig = data_obj['audio']
             sample_rate = data_obj['sample_rate']
 
-            audiodata = audio
+            audiodata = audio_orig
+            if isinstance(audio_orig, torch.Tensor):
+                audio_tmp = audiodata.detach().cpu().numpy()
+                # check if audio is float32
+                if audio_tmp.dtype == np.float32:
+                    # from float32 to int16
+                    audio_tmp = audio_tools.convert_audio_datatype_to_integer(audio_tmp)
+                # to bytes
+                audio = io.BytesIO()
+                write_wav(audio, sample_rate, audio_tmp)
+            else:
+                audio = audiodata
+
             if hasattr(audio, 'getvalue'):
                 audiodata = audio.getvalue()
 
             loaded_audio = audio_tools.resample_audio(audiodata, sample_rate, self.output_sample_rate, target_channels=1, input_channels=1, dtype="int16")
             wav_rvc = self.do_conversion(loaded_audio, sample_rate, bytes_dtype="int16")
-            raw_data = audio_tools.numpy_array_to_wav_bytes(wav_rvc, sample_rate)
 
-            if hasattr(audio, 'getvalue'):
-                data_obj['audio'] = raw_data
-            elif hasattr(raw_data, 'getvalue'):
-                data_obj['audio'] = raw_data.getvalue()
+            if isinstance(audio_orig, torch.Tensor):
+                # back to float32
+                wav_rvc = audio_tools.convert_audio_datatype_to_float(wav_rvc)
+                # back to tensor
+                data_obj['audio'] = torch.from_numpy(wav_rvc)
             else:
-                return None
+                raw_data = audio_tools.numpy_array_to_wav_bytes(wav_rvc, sample_rate)
+
+                if hasattr(audio, 'getvalue'):
+                    data_obj['audio'] = raw_data
+                elif hasattr(raw_data, 'getvalue'):
+                    data_obj['audio'] = raw_data.getvalue()
+                else:
+                    return None
 
             return data_obj
-
         return None
 
 

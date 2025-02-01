@@ -85,17 +85,17 @@ The function names have the form of `on_{event_name}_call`.
 The function needs to return `None` if something failed or should be skipped,
 or the `data_obj` again with your necessary changes to the object.
 
-As an example the call from the Silero TTS:
+As an example the call from the Silero or F5 TTS:
 ```py
-plugin_audio = Plugins.plugin_custom_event_call('silero_tts_after_audio', {'audio': audio})
-if plugin_audio is not None:
+plugin_audio = Plugins.plugin_custom_event_call('plugin_tts_after_audio', {'audio': audio, 'sample_rate': self.sample_rate})
+if plugin_audio is not None and 'audio' in plugin_audio and plugin_audio['audio'] is not None:
     audio = plugin_audio['audio']
 ```
 
 The called function in the Plugin looks like this:
 ```py
-def on_silero_tts_after_audio_call(self, data_obj):
-    if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["SILERO_TTS"]:
+def on_plugin_tts_after_audio_call(self, data_obj):
+    if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["PLUGIN_TTS"]:
         audio = data_obj['audio']
         
         # doing stuff ...
@@ -114,7 +114,7 @@ Make sure to check if the Event should be callable. (Is Plugin enabled? Are the 
 
 | Function Name                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| on_silero_tts_after_audio_call(data_obj)                       | Called after the Included Silero TTS generated audio. Expects the `audio` key in the `data_obj` <br> (audio as Pytorch Tensor).                                                                                                                                                                                                                                                                                           |
+| on_plugin_tts_after_audio_call(data_obj)                       | Called after the Included TTS generated audio. Expects the `audio` and `sample_rate` key in the `data_obj` <br> (audio as Bytes or Pytorch Tensor).                                                                                                                                                                                                                                                                                           |
 | on_audio_processor_stt_{audio_processor_caller}_call(data_obj) | Called after the stt and stt_intermediate plugin methods are called, <br>with the name of the `audio_processor_caller` setting _`settings.SetOption("audio_processor_caller", "custom_name")`_.<br>`data_obj` will be `{"text": predicted_text, "result_obj": result_obj, "final_audio": final_audio}` (used by the [Secondary Profile plugin](/Plugins/Other-Plugins/Secondary-Profile/secondary_profile_plugin.py))<br> |
 | on_plugin_get_languages_call(data_obj)                         | Called to fetch available text translation languages for Text Translation Plugins. should return the `data_obj` with a dict in the form `data_obj['languages'] = tuple([{"code": code, "name": language}])`. Return `None` if the Plugin is disabled.<br>                                                                                                                                                                 |
 
