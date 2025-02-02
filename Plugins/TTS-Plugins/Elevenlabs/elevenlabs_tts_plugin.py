@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.3
+# V1.1.4
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -13,6 +13,7 @@ import re
 import shutil
 
 import numpy as np
+from scipy.io import wavfile
 
 import Plugins
 import settings
@@ -117,6 +118,8 @@ class ElevenlabsTTSPlugin(Plugins.Base):
     target_channels = 2
 
     audio_streamer = None
+
+    last_generation = {"audio": None, "sample_rate": None, "type": None}
 
     latency_optimizations = {
         "default (no latency optimizations)": 0,
@@ -337,6 +340,9 @@ class ElevenlabsTTSPlugin(Plugins.Base):
             if plugin_audio is not None and 'audio' in plugin_audio and plugin_audio['audio'] is not None:
                 raw_data = plugin_audio['audio']
 
+            # save last generation in memory
+            self.last_generation = {"audio": raw_data.getvalue(), "sample_rate": 44100, "type": "wav"}
+
             return raw_data.getvalue()
 
         except Exception as e:
@@ -387,12 +393,36 @@ class ElevenlabsTTSPlugin(Plugins.Base):
                                                      stream=True,
                                                      optimize_streaming_latency=optimize_streaming_latency,
                                                      )
+            full_audio_data = b""
             # Iterate over the audio chunks
             for chunk in audio_data_stream:
                 self.audio_streamer.add_audio_chunk(chunk)
+                full_audio_data += chunk
+
+            # save last generation in memory
+            self.last_generation = {"audio": full_audio_data, "sample_rate": 24000, "type": "pcm"}
 
         except Exception as e:
             print(e)
+
+    def tts_get_last_generation(self):
+        if self.last_generation["type"] == "pcm":
+            # Convert PCM bytes to a NumPy array
+            pcm_data = np.frombuffer(self.last_generation["audio"], dtype=np.int16)
+
+            # Create a BytesIO object to hold the WAV data
+            wav_io = io.BytesIO()
+
+            # Write the WAV file using scipy.io.wavfile.write
+            wavfile.write(wav_io, self.last_generation["sample_rate"], pcm_data)
+
+            # Get the WAV data from the BytesIO object
+            wav_io.seek(0)
+            wav_data = wav_io.read()
+
+            return wav_data, self.last_generation["sample_rate"]
+        elif self.last_generation["type"] == "wav":
+            return self.last_generation["audio"], self.last_generation["sample_rate"]
 
     def timer(self):
         pass
