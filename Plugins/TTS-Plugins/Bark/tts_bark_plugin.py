@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.35
+# V0.3.36
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -181,19 +181,6 @@ vocos_dependency_module = {
     "path": "vocos"
 }
 
-# used for optional audio normalization
-pyloudnorm_dependency_module = {
-    "url": "https://files.pythonhosted.org/packages/58/f5/6724805521ab4e723a12182f92374031032aff28a8a89dc8505c52b79032/pyloudnorm-0.1.1-py3-none-any.whl",
-    "sha256": "d7f12ebdd097a464d87ce2878fc4d942f15f8233e26cc03f33fefa226f869a14",
-    "path": "pyloudnorm"
-}
-# pyloudnorm dependency future
-pyloudnorm_future_dependency_module = {
-    "url": "https://files.pythonhosted.org/packages/9e/cf/95b17d4430942dbf291fa5411d8189374a2e6dba91d9ef077e7fb8e869bc/future-0.18.0-cp36-none-any.whl",
-    "sha256": "3f9c52f6c3f4e287bdd9b13de6cfd72373fb694aa391b5e511deef3db15d6a62",
-    "path": "future"
-}
-
 bark_voice_clone_tool = {
     "urls": [
         "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/voice-cloning-bark/barkVoiceClone_v0.0.2.zip",
@@ -207,8 +194,6 @@ bark_voice_clone_tool = {
 class BarkTTSPlugin(Plugins.Base):
     bark_module = None
     sample_rate = 24000
-
-    pyloudnorm_module = None
 
     encodec = None
     hubert_module = None
@@ -224,17 +209,13 @@ class BarkTTSPlugin(Plugins.Base):
 
     default_chunk_backup_dir = Path(bark_plugin_dir / "chunk_backups")
 
+    last_generation = {"audio": None, "sample_rate": None}
+
     def get_plugin(self, class_name):
         for plugin_inst in Plugins.plugins:
             if plugin_inst.__class__.__name__ == class_name:
                 return plugin_inst  # return plugin instance
         return None
-
-    # Function to calculate LUFS
-    def calculate_lufs(self, audio, sample_rate):
-        meter = self.pyloudnorm_module.Meter(sample_rate)  # create BS.1770 meter
-        loudness = meter.integrated_loudness(audio)
-        return loudness
 
     def estimate_pitch(self, audio, sr, frame_size=2048, hop_size=512):
         pitches = []
@@ -259,29 +240,6 @@ class BarkTTSPlugin(Plugins.Base):
 
     def average_pitch(self, pitch_values):
         return np.mean(pitch_values)
-
-    # Function to normalize the audio based on LUFS
-    def normalize_audio_lufs(self, audio, sample_rate, lower_threshold=-24.0, upper_threshold=-16.0, gain_factor=2.0):
-        lufs = self.calculate_lufs(audio, sample_rate)
-
-        print(f"LUFS: {lufs}")
-
-        # If LUFS is lower than the lower threshold, increase volume
-        if lufs < lower_threshold:
-            print(f"audio is too quiet, increasing volume")
-            gain = (lower_threshold - lufs) / gain_factor
-            audio = audio * np.power(10.0, gain / 20.0)
-
-        # If LUFS is higher than the upper threshold, decrease volume
-        elif lufs > upper_threshold:
-            print(f"audio is too loud, decreasing volume")
-            gain = (upper_threshold - lufs) * gain_factor
-            audio = audio * np.power(10.0, gain / 20.0)
-
-        # Limit audio values to [-1, 1] (this is important to avoid clipping when converting to 16-bit PCM)
-        audio = np.clip(audio, -1, 1)
-
-        return audio, lufs
 
     def trim_silence(self, audio, silence_threshold=0.01):
         # Compute absolute value of audio waveform
@@ -615,38 +573,6 @@ class BarkTTSPlugin(Plugins.Base):
             self.bark_module = load_module(
                 str(Path(bark_plugin_dir / bark_dependency_module["path"] / "bark").resolve()))
 
-            # load the future module
-            future_path = Path(bark_plugin_dir / pyloudnorm_future_dependency_module["path"])
-            if not Path(future_path / "__init__.py").is_file():
-                downloader.download_extract([pyloudnorm_future_dependency_module["url"]],
-                                            str(bark_plugin_dir.resolve()),
-                                            pyloudnorm_future_dependency_module["sha256"],
-                                            alt_fallback=True,
-                                            fallback_extract_func=downloader.extract_zip,
-                                            fallback_extract_func_args=(
-                                                str(bark_plugin_dir / os.path.basename(
-                                                    pyloudnorm_future_dependency_module["url"])),
-                                                str(bark_plugin_dir.resolve()),
-                                            ),
-                                            title="Bark - pyloudnorm future module", extract_format="zip")
-            future = load_module(str(Path(bark_plugin_dir / pyloudnorm_future_dependency_module["path"]).resolve()))
-
-            # load the audio normalization module
-            if not Path(bark_plugin_dir / pyloudnorm_dependency_module["path"] / "__init__.py").is_file():
-                downloader.download_extract([pyloudnorm_dependency_module["url"]],
-                                            str(bark_plugin_dir.resolve()),
-                                            pyloudnorm_dependency_module["sha256"],
-                                            alt_fallback=True,
-                                            fallback_extract_func=downloader.extract_zip,
-                                            fallback_extract_func_args=(
-                                                str(bark_plugin_dir / os.path.basename(
-                                                    pyloudnorm_dependency_module["url"])),
-                                                str(bark_plugin_dir.resolve()),
-                                            ),
-                                            title="Bark - pyloudnorm module", extract_format="zip")
-            self.pyloudnorm_module = load_module(
-                str(Path(bark_plugin_dir / pyloudnorm_dependency_module["path"]).resolve()))
-
             # download and load all models
             use_small_models = self.get_plugin_setting("use_small_models", True)
             print("download and load all bark models", ("small" if use_small_models else "large"))
@@ -730,7 +656,7 @@ class BarkTTSPlugin(Plugins.Base):
             lower_threshold = self.get_plugin_setting("normalize_lower_threshold", -24.0)
             upper_threshold = self.get_plugin_setting("normalize_upper_threshold", -16.0)
             gain_factor = self.get_plugin_setting("normalize_gain_factor", 1.3)
-            audio_data, lufs = self.normalize_audio_lufs(audio_data, self.sample_rate, lower_threshold, upper_threshold,
+            audio_data, lufs = audio_tools.normalize_audio_lufs(audio_data, self.sample_rate, lower_threshold, upper_threshold,
                                                          gain_factor)
             if lufs == float('-inf') and skip_infinity_lufs:
                 print("Audio seems to be unusable. skipping")
@@ -1509,7 +1435,12 @@ class BarkTTSPlugin(Plugins.Base):
                                               target_channels=2,
                                               dtype="int16"
                                               )
+                # save last generation in memory
+                self.last_generation = {"audio": wav, "sample_rate": self.sample_rate}
         return
+
+    def tts_get_last_generation(self):
+        return self.last_generation["audio"], self.last_generation["sample_rate"]
 
     def on_event_received(self, message, websocket_connection=None):
         if self.is_enabled(False):
