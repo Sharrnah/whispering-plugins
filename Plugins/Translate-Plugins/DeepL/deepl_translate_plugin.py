@@ -1,6 +1,6 @@
 # ============================================================
 # Translates Text using DeepL API - Whispering Tiger Plugin
-# Version 1.0.8
+# Version 1.0.9
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -15,8 +15,8 @@ import time
 import random
 
 DEEPL_ENDPOINTS = {
-    "Free": "https://api-free.deepl.com/v2/translate",
-    "Pro": "https://api.deepl.com/v2/translate",
+    "Free": "https://api-free.deepl.com/v2/",
+    "Pro": "https://api.deepl.com/v2/",
     "DeepLX": ""
 }
 
@@ -70,12 +70,15 @@ class DeepLPlugin(Plugins.Base):
                         "values": ['Free', 'Pro', 'DeepLX']},
                 "formality": {"type": "select", "value": 'default',
                               "values": ['default', 'prefer_more', 'prefer_less']},
+                "model_type": {"type": "select", "value": 'prefer_quality_optimized',
+                              "values": ['prefer_quality_optimized', 'quality_optimized', 'latency_optimized']},
                 "auth_key": {"type": "textfield", "value": "", "password": True},
+                "quota_btn": {"label": "Check Usage Quota", "type": "button", "style": "default"},
                 "deeplx_endpoint": "",
                 "deeplx_info_link": {"label": "Open DeepLX GitHub", "value": "https://github.com/OwO-Network/DeepLX", "type": "hyperlink"},
             },
             settings_groups={
-                "General": ["api", "formality", "auth_key"],
+                "General": ["api", "formality", "auth_key", "model_type", "quota_btn"],
                 "DeepLX": ["deeplx_endpoint", "deeplx_info_link"],
             }
         )
@@ -86,7 +89,7 @@ class DeepLPlugin(Plugins.Base):
             websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_languages()}))
 
     def _translate_text_api(self, text, source_lang, target_lang, auth_key):
-        url = DEEPL_ENDPOINTS[self.get_plugin_setting("api")]
+        url = DEEPL_ENDPOINTS[self.get_plugin_setting("api")] + "translate"
         formality = self.get_plugin_setting("formality")
         headers = {
             'Authorization': f'DeepL-Auth-Key {auth_key}',
@@ -113,6 +116,10 @@ class DeepLPlugin(Plugins.Base):
 
         if formality is not None and formality not in ['default', '']:
             data['formality'] = formality
+
+        # model_type currently only supported by Pro API. (see https://developers.deepl.com/docs/api-reference/translate)
+        if self.get_plugin_setting("api") == "Pro":
+            data['model_type'] = self.get_plugin_setting("model_type")
 
         response = None
 
@@ -149,6 +156,30 @@ class DeepLPlugin(Plugins.Base):
         detected_language = response_json['translations'][0]['detected_source_language']
         return translated_text, detected_language
 
+    def check_quota(self):
+        auth_key = self.get_plugin_setting("auth_key")
+        url = DEEPL_ENDPOINTS[self.get_plugin_setting("api")] + "usage"
+        headers = {
+            'Authorization': f'DeepL-Auth-Key {auth_key}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            websocket.BroadcastMessage(json.dumps({"type": "error", "data": f"Error checking quota ({response.status_code}): {response.text}"}))
+            return
+        response_json = response.json()
+        character_count = response_json['character_count']
+        character_limit = response_json['character_limit']
+        characters_remaining = character_limit - character_count
+
+        # make the numbers more readable
+        character_count = "{:,}".format(character_count)
+        character_limit = "{:,}".format(character_limit)
+        characters_remaining = "{:,}".format(characters_remaining)
+
+        websocket.BroadcastMessage(json.dumps({"type": "info", "data": f"Characters used: {character_count} / {character_limit}\nRemaining: {characters_remaining}"}))
+
     def text_translate(self, text, from_code, to_code) -> tuple:
         """
         on text_translate event, translates text using DeepL API.
@@ -169,6 +200,14 @@ class DeepLPlugin(Plugins.Base):
             return data_obj
 
         return None
+
+    def on_event_received(self, message, websocket_connection=None):
+        if self.is_enabled(False):
+            if "type" not in message:
+                return
+            if message["type"] == "plugin_button_press":
+                if message["value"] == "quota_btn":
+                    self.check_quota()
 
     def on_enable(self):
         self.init()
