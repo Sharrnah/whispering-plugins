@@ -58,7 +58,7 @@ __Note:__ _When using the *_plugin_setting methods, the settings are saved with 
 `is_enabled(self, default=False)` - Check if the plugin is enabled. If the plugin is not yet in the settings file, the default value is used. So by default, plugins will be disabled. Use this around your main functionality to allow enabling/disabling of your plugin functionality even at runtime.
 
 
-## use specific Widgets in plugin settings
+## Use specific Widgets in plugin settings
 
 To use specific widgets in plugin settings, you can add specific structs to the init_plugin_settings method.
 
@@ -75,6 +75,8 @@ The following structs are available:
 - `{"type": "folder_open", "accept": "", "value": ""}` - A folder open dialog
 - `{"type": "dir_open", "accept": "", "value": ""}` - Alias for a folder open dialog
 - `{"type": "select_audio", "device_api": "|wasapi|mme|directsound|all", "device_type": "input|output", "value": ""}` - List of audio devices. Only listing input / output devices if device_type = "input" / device_type = "output". "device_api" can be empty (using main app api), 'wasapi', 'mme' or 'directsound' for a specific audio api, or 'all' for all APIs. `get_plugin_setting` on a `select_audio` will return a valid pyAudio Audio Device ID.
+- `{"type": "select_textvalue", "value": "default value", "options": [["The Default Value Text", "default value"], ["The Option 2 text", "option2"], ["option 3 text", "option3"]]}` - A select box with shown text and value seperately. Each option is an array where the key is the displayed text to the user and the value is the value returned by `get_plugin_setting`.
+- `{"type": "select_completion", "value": "English", "options": [["English", "en"], ["French", "fr"], ["German", "de"]]}` - A Input field with autocompletion similar to the language fields in the main application. Each option is an array where the key is the displayed text to the user and the value is the value returned by `get_plugin_setting`.
 
 ## Custom Plugin events
 You can use event calls in plugins using `Plugins.plugin_custom_call(event_name, data_obj)`.
@@ -180,8 +182,9 @@ class ExamplePlugin(Plugins.Base):
         osc_address = settings.GetOption("osc_address")
         osc_port = settings.GetOption("osc_port")
 
+        # get plugin settings
         hello_world = self.get_plugin_setting("hello_world", "default foo bar")
-        hello_world2 = self.get_plugin_setting("hello_world2")
+        hello_world2 = self.get_plugin_setting("hello_world2") # if no default is defined, default is taken from init_plugin_settings
         print(hello_world2)
 
         if self.is_enabled():
