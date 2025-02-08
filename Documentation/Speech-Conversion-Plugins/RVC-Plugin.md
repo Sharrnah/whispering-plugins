@@ -21,7 +21,7 @@ You need a RVCv2 Model for this to work.
 
     - `Own Voice (Realtime)` works by starting a seperate thread. All Realtime settings can be found under the Plugin `Realtime-Tab`.
 
-    - Set it to `Integrated Text-to-Speech (Silero TTS)` when using the integrated Silero Text-to-Speech model, or to `Plugin Text-to-Speech` when using any other TTS Model/Plugin to convert the TTS Voice into the RVC Models voice.
+    - Set it to `Text-to-Speech` when using any TTS Model/Plugin to convert the TTS Voice into the RVC Models voice.
 - Under the __Model-Tab__,
 
   *__select the RVCv2 Model (and Index) file you want the voice to be converted into.__*
