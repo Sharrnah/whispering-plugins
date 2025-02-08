@@ -143,7 +143,7 @@ class ExamplePlugin(Plugins.Base):
                 "hello_world2": "foo bar",
                 "osc_auto_processing_enabled": False,
                 "tts_answer": False,
-                "homepage_link": {"label": "Whispering Tiger Link", "value": "https://github.com/Sharrnah/whispering-ui", "type": "hyperlink"},
+                "homepage_link": {"label": "Whispering Tiger Link", "value": "https://whispering-tiger.github.io/", "type": "hyperlink"},
 
                 "more_settings_a": "default value",
                 "more_settings_b": "default value\nmultiline",
