@@ -9,9 +9,9 @@ You need a RVCv2 Model for this to work.
 ## Configuration
 - Under the __General-Tab__, select the RVCv2 Model (and Index) file you want the voice to be converted into.
     - As `f0method` select `rmvpe` for best quality, or `crepe` (or others) for faster but lower quality.
-    - Set `f0up_key` to a value that fits the convesion pitch. This is depending on the Input and Output Voice.
-    - lower **(~ -12)** if the voice conversion is female to male
-    - higher **(~ +12)** if the voice conversion is male to female
+    - Set `f0up_key` to a value that fits the conversion pitch. This is depending on the Input and Output Voice.
+      - lower **(~ -12)** if the voice conversion is female to male
+      - higher **(~ +12)** if the voice conversion is male to female
 - Under the __Audio conversion-Tab__, select the source from where you want to convert the voice from in `voice_change_source`.
     - `Own Voice` works by using Whispering Tigers audio recording logic. So same VAD, Speech Pause and Timelimit settings apply as when using Speech-to-Text models.
       
