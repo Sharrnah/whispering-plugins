@@ -107,6 +107,7 @@ class RVC:
             self.index_rate = index_rate
 
             if last_rvc is None:
+                torch.serialization.add_safe_globals([fairseq.data.dictionary.Dictionary])
                 models, _, _ = fairseq.checkpoint_utils.load_model_ensemble_and_task(
                     [hubert_model_path],
                     suffix="",
