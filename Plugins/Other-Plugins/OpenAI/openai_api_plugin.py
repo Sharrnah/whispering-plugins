@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.16
+# Version 0.0.17
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -130,8 +130,11 @@ LLM_MODELS = [
     'gpt-4-turbo',
     'gpt-4',
     'gpt-4o',
+    'chatgpt-4o-latest',
+    'gpt-4.5-preview',
     'o1-mini',
     'o1-preview',
+    'o1',
 ]
 
 
@@ -162,8 +165,10 @@ class OpenAIAPIPlugin(Plugins.Base):
                 "transcribe_audio_enabled": False,
                 "audio_transcribe_api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
                 "audio_translate_api_endpoint": "https://api.openai.com/v1/audio/translations",
-                "audio_model": {"type": "select", "value": "whisper-1",
+                "audio_model": {"type": "select", "value": "gpt-4o-mini-transcribe",
                                 "values": [
+                                    'gpt-4o-mini-transcribe',
+                                    'gpt-4o-transcribe',
                                     'whisper-1',
                                 ]},
 
@@ -174,10 +179,12 @@ class OpenAIAPIPlugin(Plugins.Base):
                               "values": [
                                   'tts-1-hd',
                                   'tts-1',
+                                  'gpt-4o-mini-tts',
                               ]},
                 "tts_voice": {"type": "select", "value": TTS_VOICES[0],
                               "values": TTS_VOICES},
                 "tts_speed": {"type": "slider", "min": 0.25, "max": 4.0, "step": 0.01, "value": 1.0},
+                "tts_instructions": "",
                 "stt_min_words": -1,
                 "stt_max_words": -1,
                 "stt_max_char_length": -1,
@@ -205,7 +212,7 @@ class OpenAIAPIPlugin(Plugins.Base):
                                    "translate_temperature", "translate_max_tokens", "translate_top_p"],
                 "Speech-to-Text": ["audio_transcribe_api_endpoint",
                                    "audio_translate_api_endpoint", "audio_model"],
-                "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed",
+                "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed", "tts_instructions",
                                    "stt_min_words", "stt_max_words", "stt_max_char_length", "streamed_playback"],
                 "Chat": ["chat_api_endpoint", "chat_model", "chat_message", "chat_system_prompt", "chat_temperature",
                          "chat_max_tokens", "chat_top_p", "chat_message_send_btn"],
@@ -365,6 +372,7 @@ class OpenAIAPIPlugin(Plugins.Base):
             api_key = self.get_plugin_setting("api_key_text_to_speech_overwrite")
         tts_voice = self.get_plugin_setting("tts_voice")
         tts_speed = self.get_plugin_setting("tts_speed")
+        tts_instructions = self.get_plugin_setting("tts_instructions")
 
         headers = {
             'Authorization': f'Bearer {api_key}',
@@ -377,6 +385,9 @@ class OpenAIAPIPlugin(Plugins.Base):
             'speed': tts_speed,
             'response_format': "wav",
         }
+
+        if tts_instructions != "":
+            data['instructions'] = tts_instructions
 
         response = requests.post(url, headers=headers, data=json.dumps(data))
         if response.status_code != 200:
