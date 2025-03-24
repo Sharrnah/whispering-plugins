@@ -1,6 +1,6 @@
 # ============================================================
 # OpenAI API - Whispering Tiger Plugin
-# Version 0.0.17
+# Version 0.0.18
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -327,7 +327,7 @@ class OpenAIAPIPlugin(Plugins.Base):
         }
         data = {
             'model': audio_model,
-            'response_format': "verbose_json",
+            'response_format': "json",
         }
         if language is not None and language != "" and language.lower() != "auto" and task == "transcribe":
             data['language'] = language
