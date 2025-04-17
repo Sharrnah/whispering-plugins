@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.2.1
+# V1.2.2
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -78,7 +78,7 @@ rvc_infer_script = {
         "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/rvc-plugin/rvc_infer.py",
         "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/rvc-plugin2/rvc_infer.py"
     ],
-    "sha256": "1f494df7d44033d22017b06c2966725c713b8b0c9756768ae0625868a4283686"
+    "sha256": "8d7340ed093e9f4ab582d0c3bdc8497baedef351a31cf43c6c89b3af12d85fb7"
 }
 rvc_realtime_infer_script = {
     "urls": [
