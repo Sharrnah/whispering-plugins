@@ -122,6 +122,7 @@ sys.path.append(os.path.join(rvc_sts_plugin_dir, "Retrieval-based-Voice-Conversi
 from infer.modules.vc.pipeline import Pipeline
 from infer.lib.infer_pack.models import SynthesizerTrnMs256NSFsid, SynthesizerTrnMs256NSFsid_nono, SynthesizerTrnMs768NSFsid, SynthesizerTrnMs768NSFsid_nono
 from fairseq import checkpoint_utils
+from fairseq.data import Dictionary
 
 hubert_model=None
 hubert_model_path = os.path.join(rvc_sts_plugin_dir, "Retrieval-based-Voice-Conversion-WebUI", "assets", "hubert", "hubert_base.pt")
@@ -137,6 +138,7 @@ from tools.torchgate import TorchGate
 def load_hubert():
     global hubert_model
     #models, saved_cfg, task = checkpoint_utils.load_model_ensemble_and_task(["hubert_base.pt"],suffix="",)
+    torch.serialization.add_safe_globals([Dictionary])
     models, saved_cfg, task = checkpoint_utils.load_model_ensemble_and_task([hubert_model_path],suffix="",)
     hubert_model = models[0]
     hubert_model = hubert_model.to(device)
