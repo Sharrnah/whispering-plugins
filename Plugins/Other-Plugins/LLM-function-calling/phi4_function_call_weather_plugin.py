@@ -1,7 +1,7 @@
 # ============================================================
 # Adds a weather function call plugin to Whispering Tiger
 #
-# V0.0.1
+# V0.0.2
 #
 # See https://github.com/Sharrnah/whispering
 # ============================================================
@@ -23,9 +23,18 @@ class Phi4FunctionCallWeatherPlugin(Plugins.Base):
         }
     }
 
-    function_call_reply_prompt = 'You called {function_name} with the result temperature={temperature}, rain={rain}, showers={showers}, snowfall={snowfall}, precipitation={precipitation}, wind speed={wind_speed} to {function_description}'
+    function_call_reply_prompt = 'You called {function_name} with the result temperature={temperature}, rain={rain}, showers={showers}, snowfall={snowfall}, precipitation={precipitation}, wind speed={wind_speed} to {function_description}.'
 
     def init(self):
+        # prepare all possible settings
+        self.init_plugin_settings(
+            {
+                "add_emoji": True,
+            },
+            settings_groups={
+                "General": ["add_emoji"],
+            }
+        )
         pass
 
     def on_plugin_llm_function_registration_call(self, data_obj):
@@ -37,8 +46,6 @@ class Phi4FunctionCallWeatherPlugin(Plugins.Base):
 
             # set modified audio back to data_obj
             data_obj['tool_definition'] = self.tool
-            print("self.tool")
-            print(self.tool)
             return data_obj
         return None
 
@@ -66,6 +73,10 @@ class Phi4FunctionCallWeatherPlugin(Plugins.Base):
                 function_description=self.tool['description'],
                 **result,
             )
+
+            if self.get_plugin_setting("add_emoji"):
+                function_call_reply_prompt += " Add an emoji for the weather like ⛅."
+
             data_obj['reply_prompt'] = function_call_reply_prompt
 
             return data_obj
