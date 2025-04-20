@@ -80,7 +80,9 @@ The following structs are available:
 
 ## Custom Plugin events
 You can use event calls in plugins using `Plugins.plugin_custom_event_call(event_name, data_obj)`. This will give the result from the first Plugin with that event function.
+
 To get the results of all Plugins with that event function, use `Plugins.plugin_custom_event_call_all(event_name, data_obj)` which will return a list of all results you can iterate over.
+
 The function names have the form of `on_{event_name}_call`.
 
 `event_name` should be unique and self explaining.
