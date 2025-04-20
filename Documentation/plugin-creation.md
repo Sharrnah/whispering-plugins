@@ -79,13 +79,16 @@ The following structs are available:
 - `{"type": "select_completion", "value": "English", "options": [["English", "en"], ["French", "fr"], ["German", "de"]]}` - A Input field with autocompletion similar to the language fields in the main application. Each option is an array where the key is the displayed text to the user and the value is the value returned by `get_plugin_setting`.
 
 ## Custom Plugin events
-You can use event calls in plugins using `Plugins.plugin_custom_call(event_name, data_obj)`.
+You can use event calls in plugins using `Plugins.plugin_custom_event_call(event_name, data_obj)`. This will give the result from the first Plugin with that event function.
+To get the results of all Plugins with that event function, use `Plugins.plugin_custom_event_call_all(event_name, data_obj)` which will return a list of all results you can iterate over.
 The function names have the form of `on_{event_name}_call`.
 
 `event_name` should be unique and self explaining.
 
 The function needs to return `None` if something failed or should be skipped,
 or the `data_obj` again with your necessary changes to the object.
+
+**Note:** The order in which plugins are loaded and their event functions are called is not defined.
 
 As an example the call from the Silero or F5 TTS:
 ```py
@@ -119,7 +122,7 @@ Make sure to check if the Event should be callable. (Is Plugin enabled? Are the 
 | on_plugin_tts_after_audio_call(data_obj)                       | Called after the Included TTS generated audio. Expects the `audio` and `sample_rate` key in the `data_obj` <br> (audio as Bytes or Pytorch Tensor).                                                                                                                                                                                                                                                                                           |
 | on_audio_processor_stt_{audio_processor_caller}_call(data_obj) | Called after the stt and stt_intermediate plugin methods are called, <br>with the name of the `audio_processor_caller` setting _`settings.SetOption("audio_processor_caller", "custom_name")`_.<br>`data_obj` will be `{"text": predicted_text, "result_obj": result_obj, "final_audio": final_audio}` (used by the [Secondary Profile plugin](/Plugins/Other-Plugins/Secondary-Profile/secondary_profile_plugin.py))<br> |
 | on_plugin_get_languages_call(data_obj)                         | Called to fetch available text translation languages for Text Translation Plugins. should return the `data_obj` with a dict in the form `data_obj['languages'] = tuple([{"code": code, "name": language}])`. Return `None` if the Plugin is disabled.<br>                                                                                                                                                                 |
-
+| on_plugin_llm_function_registration_call(data_obj)                         | Called to register LLM function call methods (Currently used by Phi-4 MM Model). See (Phi4 function-call weather plugin)[LLM-function-calling/phi4_function_call_weather_plugin.py]<br>                                                                                                                                                                 |
 
 ## Example plugin
 ```python
