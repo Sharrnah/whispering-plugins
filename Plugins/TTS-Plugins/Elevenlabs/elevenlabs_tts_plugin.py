@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.4
+# V1.1.5
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -196,7 +196,7 @@ class ElevenlabsTTSPlugin(Plugins.Base):
                 #"voice_index": 0,
                 "model_id": {"type": "select", "value": "eleven_multilingual_v2",
                              "values": ["eleven_multilingual_v1", "eleven_multilingual_v2", "eleven_english_v2",
-                                        "eleven_turbo_v2", "eleven_turbo_v2_5", "eleven_flash_v2", "eleven_flash_v2_5", "eleven_monolingual_v1"]},
+                                        "eleven_turbo_v2", "eleven_turbo_v2_5", "eleven_flash_v2", "eleven_flash_v2_5", "eleven_monolingual_v1", "eleven_v3"]},
 
                 # Voice Settings
                 "voice_stability": {"type": "slider", "min": -0.01, "max": 1.00, "step": 0.01, "value": 0.71},
@@ -423,6 +423,18 @@ class ElevenlabsTTSPlugin(Plugins.Base):
             return wav_data, self.last_generation["sample_rate"]
         elif self.last_generation["type"] == "wav":
             return self.last_generation["audio"], self.last_generation["sample_rate"]
+        elif self.last_generation["type"] == "nparray":
+            # Create a BytesIO object to hold the WAV data
+            wav_io = io.BytesIO()
+
+            # Write the WAV file using scipy.io.wavfile.write
+            wavfile.write(wav_io, self.last_generation["sample_rate"], self.last_generation["audio"])
+
+            # Get the WAV data from the BytesIO object
+            wav_io.seek(0)
+            wav_data = wav_io.read()
+
+            return wav_data, self.last_generation["sample_rate"]
 
     def timer(self):
         pass
