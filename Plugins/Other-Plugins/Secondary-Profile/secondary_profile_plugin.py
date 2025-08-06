@@ -1,6 +1,6 @@
 # ============================================================
 # Load and use a second profile settings file for processing audio using Whispering Tiger
-# Version 1.0.1
+# Version 1.0.3
 #
 # See https://github.com/Sharrnah/whispering
 # ============================================================
@@ -23,6 +23,10 @@ from Models.STS import VAD, DeepFilterNet, Noisereduce
 from whisper import audio as whisper_audio
 
 from Models.TextTranslation import texttranslate
+
+#import concurrent.futures
+
+#from pathos.multiprocessing import ProcessingPool as Pool
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -49,39 +53,85 @@ class SecondaryProfilePlugin(Plugins.Base):
     pause_timer = None
     pause_end_time = None
 
+    p = None
+
     def init(self):
+
+        source_text_translation_languages = []
+        target_text_translation_languages = []
+        texttranslate_languages = texttranslate.GetInstalledLanguageNames()
+        if texttranslate_languages is not None:
+            source_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
+            source_text_translation_languages.insert(0, ["Auto", "auto"])
+            target_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
+
+        # get STT languages
+        whisper_languages = settings.SETTINGS.GetOption("whisper_languages")
+        whisper_languages_list = [["", ""]]
+        if whisper_languages is not None and len(whisper_languages) > 0:
+            whisper_languages_list = [[lang['name'], lang['code']] for lang in whisper_languages]
+
+        stt_type = settings.SETTINGS.GetOption("stt_type")
+        tasks = {
+            "transcribe": "transcribe",
+            "translate": "translate (to english)",
+        }
+        if stt_type == "phi4":
+            tasks = {
+                "transcribe": "transcribe",
+                "translate": "translate",
+                "transcribe_translate": "transcribe & translate",
+                "question_answering": "question & answering",
+            }
+        tasks_array = [[value, key] for key, value in tasks.items()]
+
         # prepare all possible settings
         self.init_plugin_settings(
             {
+                # General settings
                 "recording_device_index": {"type": "select_audio", "device_type": "input", "device_api": "all", "value": str(settings.GetOption("device_index"))},
                 "settings_file": {"type": "file_open", "accept": ".yaml,.yml", "value": "Profiles/"},
-                "vad_enabled": True,
                 "btn_start": {"label": "start", "type": "button", "style": "primary"},
-                "btn_stop": {"label": "stop", "type": "button", "style": "default"},
-                #"btn_update": {"label": "Update Settings", "type": "button", "style": "default"},
+                #"btn_stop": {"label": "stop", "type": "button", "style": "default"},
+                "btn_update": {"label": "Update Settings", "type": "button", "style": "default"},
                 "pause_time_on_main_activity": {"type": "slider", "min": 0.5, "max": 20.0, "step": 0.5, "value": 2.0},
-
-                # processing settings
-                "whisper_task": {"type": "select", "value": "transcribe", "values": ["transcribe", "translate"]},
-                "stt_enabled": True,
-                "osc_sending": False,
                 "realtime_frequency_time": {"type": "slider", "min": 0.1, "max": 20, "step": 0.1, "value": 1.0},
 
+                # speech-to-text settings
+                "vad_enabled": True,
+                "vad_confidence_threshold": {"type": "slider", "min": 0.0, "max": 1.0, "step": 0.1, "value": 0.4},
+                "audio_energy": {"type": "slider", "min": 0, "max": 3000, "step": 1, "value": 300},
+                "phrase_time_limit": {"type": "slider", "min": 1, "max": 30, "step": 1, "value": 30},
+                "speech_pause": {"type": "slider", "min": 0.1, "max": 5.0, "step": 0.1, "value": 1.0},
+                "speaker_language": {"type": "select_completion", "value": "", "values": whisper_languages_list},
+                "whisper_task": {"type": "select_textvalue", "value": "transcribe", "values": tasks_array},
+                "stt_enabled": True,
+
+                # Text Translation Settings
+                "txt_translate_enabled": False,
+                "txt_romaji": False,
+                "txt_translate_source": {"type": "select_completion", "value": "", "values": source_text_translation_languages},
+                "txt_translate_target": {"type": "select_completion", "value": "English", "values": target_text_translation_languages},
+
                 # websocket settings
-                "websocket_ip": {"type": "textfield", "value": "0"},
+                "websocket_ip": {"type": "textfield", "value": "127.0.0.1"},
                 "websocket_port": {"type": "textfield", "value": "5001"},
 
                 # OSC settings
-                "osc_auto_processing_enabled": False,
+                "osc_enabled": False,
+                "osc_typing_indicator": False,
             },
             settings_groups={
-                "General": ["recording_device_index", "settings_file", "vad_enabled", "btn_start", "btn_stop", "pause_time_on_main_activity"],
-                #"Settings": ["btn_update", "whisper_task", "stt_enabled", "osc_sending", "realtime_frequency_time"],
-                "Settings": ["whisper_task", "stt_enabled", "osc_sending", "realtime_frequency_time"],
-                "Websocket": ["websocket_ip", "websocket_port"],
-                "OSC": ["osc_auto_processing_enabled"],
+                "General": ["recording_device_index", "settings_file", "realtime_frequency_time", "btn_start", "pause_time_on_main_activity", "btn_update"],
+                "Speech-to-Text": ["whisper_task", "speaker_language", "stt_enabled", "vad_enabled", "vad_confidence_threshold", "audio_energy", "phrase_time_limit", "speech_pause"],
+                "Text Translation": ["txt_translate_enabled", "txt_translate_source", "txt_romaji", "txt_translate_target"],
+                "Websocket": [["websocket_ip"], ["websocket_port"]],
+                "OSC": ["osc_enabled", "osc_typing_indicator"],
             }
         )
+
+        #if self.is_enabled(False):
+            #self.p = Pool(1)
 
     def main_app_before_callback_func_for_pause(self, main_app_obj=None):
         self.set_pause(self.get_plugin_setting("pause_time_on_main_activity"))
@@ -94,10 +144,23 @@ class SecondaryProfilePlugin(Plugins.Base):
         #self.settings.SetOption("realtime", False)
         self.settings.SetOption("tts_answer", False)
         self.settings.SetOption("audio_processor_caller", "secondary_profile_plugin")
+
+        self.settings.SetOption("txt_translate_realtime", True)
+
+        # set secondary profile stt_type to main stt_type
+        self.settings.SetOption("stt_type", settings.SETTINGS.GetOption("stt_type"))
+
+        print("Secondary Profile Plugin: ", self.settings.GetOption("stt_type"))
+        print("Main: ", settings.SETTINGS.GetOption("stt_type"))
+
         #self.settings.SetOption("skip_plugins", True)
         self.update_settings()
 
         self.late_init()
+        #print("running secondary profile process")
+        #self.p.apipe(self.late_init, self)
+        #self.p.imap(self.late_init, [self])
+        #print("running secondary profile process 2")
 
         websocket_ip = self.get_plugin_setting("websocket_ip")
         websocket_port = self.get_plugin_setting("websocket_port")
@@ -116,9 +179,19 @@ class SecondaryProfilePlugin(Plugins.Base):
         if not self.paused_stt:
             # skip updating stt_enabled if it is paused
             self.settings.SetOption("stt_enabled", self.get_plugin_setting("stt_enabled"))
-        self.settings.SetOption("osc_auto_processing_enabled", self.get_plugin_setting("osc_sending"))
-        self.settings.SetOption("whisper_task", self.get_plugin_setting("whisper_task"))
+        self.settings.SetOption("current_language", self.get_plugin_setting("speaker_language"))
+        self.settings.SetOption("energy", self.get_plugin_setting("audio_energy"))
+        self.settings.SetOption("phrase_time_limit", self.get_plugin_setting("phrase_time_limit"))
+        self.settings.SetOption("pause", self.get_plugin_setting("speech_pause"))
+        self.settings.SetOption("osc_auto_processing_enabled", self.get_plugin_setting("osc_enabled"))
+        self.settings.SetOption("osc_typing_indicator", self.get_plugin_setting("osc_typing_indicator"))
         self.settings.SetOption("realtime_frequency_time", self.get_plugin_setting("realtime_frequency_time"))
+        self.settings.SetOption("vad_confidence_threshold", self.get_plugin_setting("vad_confidence_threshold"))
+        # Text Translation Settings
+        self.settings.SetOption("txt_translate", self.get_plugin_setting("txt_translate_enabled"))
+        self.settings.SetOption("src_lang", self.get_plugin_setting("txt_translate_source"))
+        self.settings.SetOption("trg_lang", self.get_plugin_setting("txt_translate_target"))
+        self.settings.SetOption("txt_romaji", self.get_plugin_setting("txt_romaji"))
 
     def update_settings_in_callback(self, callback_obj=None):
         self.update_settings()
@@ -171,7 +244,6 @@ class SecondaryProfilePlugin(Plugins.Base):
                 if message["value"] == "btn_update":
                     self.update_settings()
 
-
     def stop_thread(self):
         if self.audio_thread is not None:
             self.audio_thread.join()
@@ -188,6 +260,7 @@ class SecondaryProfilePlugin(Plugins.Base):
         print("stopped second processing plugin audio")
 
     def late_init(self):
+        print("running late_init !!!!!")
         vad_enabled = self.get_plugin_setting("vad_enabled")
         vad_thread_num = int(float(settings.SETTINGS.GetOption("vad_thread_num")))
 
@@ -253,8 +326,14 @@ class SecondaryProfilePlugin(Plugins.Base):
     def audio_thread_run(self):
         # wait a bit before initialization
         time.sleep(8)
+        while self.stream.is_active():
+            time.sleep(0.1)
 
-        self.py_audio = pyaudiowpatch.PyAudio()
+    def start_audio_stream(self):
+        #if self.get_plugin_setting("loopback_support"):
+        #    self.py_audio = pyaudiowpatch.PyAudio()
+        #else:
+        #    self.py_audio = pyaudio.PyAudio()
 
         # call init methods
         for plugin in self.plugins:
@@ -290,19 +369,22 @@ class SecondaryProfilePlugin(Plugins.Base):
             sample_rate=SAMPLE_RATE,
             channels=CHANNELS,
             chunk=vad_frames_per_buffer,
-            py_audio=self.py_audio,
+            py_audio=None,
+            #py_audio=self.py_audio,
+            #py_audio=audio_tools.main_app_py_audio,
             audio_processor=self.processor,
         )
 
         # Start the stream
         self.stream.start_stream()
 
-        while self.stream.is_active():
-            time.sleep(0.1)
+        #self.audio_thread = threading.Thread(target=self.audio_thread_run)
+        #self.audio_thread.start()
 
-    def start_audio_stream(self):
-        self.audio_thread = threading.Thread(target=self.audio_thread_run)
-        self.audio_thread.start()
+        #time.sleep(8)
+        #while self.stream.is_active():
+        #    time.sleep(0.1)
+
 
     def on_enable(self):
         self.init()
