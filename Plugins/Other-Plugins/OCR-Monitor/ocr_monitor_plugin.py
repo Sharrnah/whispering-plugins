@@ -3,12 +3,15 @@
 # Version: 0.0.1
 # This will monitor a region of the screen for text and send it to Whispering Tiger for processing.
 # ============================================================
+import json
 import platform
 import traceback
 
 import settings
+import websocket
 from Models import OCR
 from Models.TTS import tts
+from Models.TextTranslation import texttranslate
 
 if platform.system() == 'Windows':
     import mss
@@ -79,8 +82,15 @@ class OCRMonitorPlugin(Plugins.Base):
         # if text stable long enough, play TTS once
         if now - (self.text_stable_since or now) >= stability_time:
             if self.tts_played_for != text:
-                self.run_tts(text)
                 self.tts_played_for = text
+                # translate text if translation is enabled
+                if self.get_plugin_setting("text_translation_enabled"):
+                    src_lang = self.get_plugin_setting("language_source")
+                    target_lang = self.get_plugin_setting("language_target")
+                    text = self.run_text_translate(text, src_lang, target_lang)
+                print(f"Detected text: {text}")
+                self.send_text_result(text)
+                self.run_tts(text)
 
     def tkinter_thread_func(self):
         def check_queue():
@@ -441,13 +451,25 @@ class OCRMonitorPlugin(Plugins.Base):
         self.tkinter_thread.start()
 
     def init(self):
+        text_translation_languages = []
+        default_language = settings.SETTINGS.GetOption("trg_lang")
+        texttranslate_languages = texttranslate.GetInstalledLanguageNames()
+        if texttranslate_languages is not None:
+            text_translation_languages = [lang['code'] for lang in texttranslate_languages]
+        source_text_translation_languages = list(text_translation_languages)
+        text_translation_languages.insert(0, "")
+        source_text_translation_languages.insert(0, "auto")
         # prepare all possible plugin settings and their default values
         self.init_plugin_settings(
             {
                 # General settings
-                "enabled": False,
+                "monitoring_enabled": False,
                 "frequency": 5,
                 "tts_enabled": False,
+                "show_selector": {"type": "button", "style": "button", "label": "Select Region"},
+                "ocr_btn": {"type": "button", "style": "button", "label": "OCR"},
+
+                # Stability settings
                 "stability_time": 0,
                 "levenshtein_threshold": 5,
                 "levenshtein_word_threshold": 1,
@@ -457,15 +479,28 @@ class OCRMonitorPlugin(Plugins.Base):
                 "region_y": 100,
                 "region_width": 200,
                 "region_height": 100,
-                "show_selector": {"type": "button", "style": "button", "label": "Select Region"},
-                "ocr_btn": {"type": "button", "style": "button", "label": "OCR"},
+
+                # Translation settings
+                "text_translation_enabled": False,
+                "language_source": {"type": "select", "value": "auto", "values": source_text_translation_languages},
+                "language_target": {"type": "select", "value": default_language, "values": text_translation_languages},
             },
             settings_groups={
-                "General": ["enabled", "frequency", "tts_enabled", "stability_time", "levenshtein_threshold", "levenshtein_word_threshold"],
-                "Region": [
-                    ["region_x", "region_width", "show_selector"], # Column 1
-                    ["region_y", "region_height", "ocr_btn"], # Column 2
+                "General": [
+                    "monitoring_enabled", "frequency", "tts_enabled", "show_selector", "ocr_btn"
                 ],
+                "Stability": [
+                    ["levenshtein_threshold", "stability_time"],
+                    ["levenshtein_word_threshold"],
+                ],
+                "Region": [
+                    ["region_x", "region_width"],
+                    ["region_y", "region_height"],
+                ],
+                "Translation": [
+                    ["language_target", "text_translation_enabled"],
+                    ["language_source"],
+                ]
             }
         )
         # setup OCR background thread
@@ -482,7 +517,7 @@ class OCRMonitorPlugin(Plugins.Base):
             # wait for frequency seconds or until stop event is set
             if self.ocr_thread_stop_event.wait(timeout=frequency):
                 break
-            if self.is_enabled(False) and self.get_plugin_setting("enabled"):
+            if self.is_enabled(False) and self.get_plugin_setting("monitoring_enabled"):
                 image = self.get_image_from_region()
                 if image is not None:
                     result_text = self.run_ocr(image)
@@ -526,6 +561,10 @@ class OCRMonitorPlugin(Plugins.Base):
                     image = self.get_image_from_region()
                     if image is not None:
                         result_text = self.run_ocr(image)
+                        if self.get_plugin_setting("text_translation_enabled", False):
+                            src_lang = self.get_plugin_setting("language_source", "auto")
+                            target_lang = self.get_plugin_setting("language_target", "eng_Latn")
+                            result_text = self.run_text_translate(result_text, src_lang, target_lang)
                         self.run_tts(result_text)
                 if message["value"] == "show_selector":
                     # show or stop region selector
@@ -585,3 +624,17 @@ class OCRMonitorPlugin(Plugins.Base):
                         except Exception as e:
                             print(f"Plugin TTS failed in Plugin {plugin_inst.__class__.__name__}:", e)
                             traceback.print_exc()
+
+    def run_text_translate(self, text, src_lang=None, target_lang=None):
+        text, from_code, to_code = texttranslate.TranslateLanguage(text, src_lang, target_lang, False, False)
+        return text
+
+    def send_text_result(self, text):
+        """Send the detected text to the main application."""
+        if self.is_enabled(False):
+            result_obj = {
+                "type": "llm_answer",
+                "language": self.get_plugin_setting("language_target"),
+                "llm_answer": text
+            }
+            websocket.BroadcastMessage(json.dumps(result_obj))
