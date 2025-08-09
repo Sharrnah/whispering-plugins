@@ -1,12 +1,18 @@
 # ============================================================
 # OCR Monitor plugin for Whispering Tiger
-# Version: 0.0.1
+# Version: 0.0.2
 # This will monitor a region of the screen for text and send it to Whispering Tiger for processing.
 # ============================================================
 import json
+import os
 import platform
+import shutil
 import traceback
+from pathlib import Path
 
+from tensorrt_libs import DEPENDENCY_PATHS
+
+import downloader
 import settings
 import websocket
 from Models import OCR
@@ -17,12 +23,78 @@ if platform.system() == 'Windows':
     import mss
 
 import numpy as np
+from PIL import Image
 
 import Plugins
 import tkinter as tk
 import threading
 import queue
 import time
+
+
+from importlib import util
+import importlib
+import pkgutil
+import sys
+
+def load_module(package_dir, recursive=False):
+    package_dir = os.path.abspath(package_dir)
+    package_name = os.path.basename(package_dir)
+
+    # Add the parent directory of the package to sys.path
+    parent_dir = os.path.dirname(package_dir)
+    sys.path.insert(0, parent_dir)
+
+    # Load the package
+    spec = util.find_spec(package_name)
+    if spec is None:
+        raise ImportError(f"Cannot find package '{package_name}'")
+
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if recursive:
+        # Recursively load all submodules
+        for _, name, _ in pkgutil.walk_packages(module.__path__, module.__name__ + '.'):
+            importlib.import_module(name)
+
+    # Remove the parent directory from sys.path
+    sys.path.pop(0)
+
+    return module
+
+
+DEPENDENCY_LINKS = {
+    "tesseract": {
+        "urls": [
+            "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/tesseract/tesseract-5.4.0.20240606.zip",
+            "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/tesseract/tesseract-5.4.0.20240606.zip",
+            "https://s3.libs.space:9000/projects/tesseract/tesseract-5.4.0.20240606.zip",
+        ],
+        "checksum": "0cb8f4e6abe44097e27e89409290babc636b347421c139a5b266aef0e7791198",
+        "file_checksums": {},
+        "path": "tesseract",
+    },
+    "tessdata": {
+        "urls": [
+            "https://github.com/tesseract-ocr/tessdata/archive/ced78752cc61322fb554c280d13360b35b8684e4.zip",
+        ],
+        "checksum": "40100cef1911bd4c1543afae3a58ca4c148bfa79eabc7e3fa5ad146ce08b103b",
+        "file_checksums": {},
+        "path": "tessdata",
+        "zip_path": "tessdata-ced78752cc61322fb554c280d13360b35b8684e4",
+    },
+    "pytesseract": {
+        "urls": [
+            "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:projects/tesseract/pytesseract.zip",
+            "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:projects/tesseract/pytesseract.zip",
+            "https://s3.libs.space:9000/projects/tesseract/pytesseract.zip",
+        ],
+        "checksum": "6eaf532ff1e3c145369c0fae7322b196dec1c9f97de619920347289053a2db09",
+        "file_checksums": {},
+        "path": "pytesseract",
+    },
+}
 
 class OCRMonitorPlugin(Plugins.Base):
     root = None
@@ -32,6 +104,11 @@ class OCRMonitorPlugin(Plugins.Base):
     update_queue = None
     confirm_button = None
     confirm_text = None
+
+    tesseract_module = None
+
+    plugin_dir = Path(Path.cwd() / "Plugins" / "ocr_monitor_plugin")
+    download_state = {"is_downloading": False}
 
     # Region selection state
     drag_data = {"x": 0, "y": 0, "action": None}
@@ -83,13 +160,15 @@ class OCRMonitorPlugin(Plugins.Base):
         if now - (self.text_stable_since or now) >= stability_time:
             if self.tts_played_for != text:
                 self.tts_played_for = text
+                original_text = None
                 # translate text if translation is enabled
                 if self.get_plugin_setting("text_translation_enabled"):
                     src_lang = self.get_plugin_setting("language_source")
                     target_lang = self.get_plugin_setting("language_target")
                     text = self.run_text_translate(text, src_lang, target_lang)
-                print(f"Detected text: {text}")
-                self.send_text_result(text)
+                if self.tts_played_for != text:
+                    original_text = self.tts_played_for
+                self.send_text_result(text, original_text)
                 self.run_tts(text)
 
     def tkinter_thread_func(self):
@@ -451,6 +530,8 @@ class OCRMonitorPlugin(Plugins.Base):
         self.tkinter_thread.start()
 
     def init(self):
+        os.makedirs(self.plugin_dir, exist_ok=True)
+
         text_translation_languages = []
         default_language = settings.SETTINGS.GetOption("trg_lang")
         texttranslate_languages = texttranslate.GetInstalledLanguageNames()
@@ -467,7 +548,19 @@ class OCRMonitorPlugin(Plugins.Base):
                 "frequency": 5,
                 "tts_enabled": False,
                 "show_selector": {"type": "button", "style": "button", "label": "Select Region"},
-                "ocr_btn": {"type": "button", "style": "button", "label": "OCR"},
+                "ocr_btn": {"type": "button", "style": "button", "label": "OCR Test"},
+
+                # tesseract settings
+                "use_tesseract": False,
+                "tesseract_language": {"type": "select", "value": "eng", "values": ["eng"]},
+                "tesseract_update_btn": {"type": "button", "style": "button", "label": "Update Languages"},
+
+
+                # Display settings
+                "subtitle_enabled": False,
+                "subtitle_zz_info": {
+                    "label": "subtitle_enabled needs the subtitle display plugin to work.",
+                    "type": "label", "style": "left"},
 
                 # Stability settings
                 "stability_time": 0,
@@ -489,6 +582,12 @@ class OCRMonitorPlugin(Plugins.Base):
                 "General": [
                     "monitoring_enabled", "frequency", "tts_enabled", "show_selector", "ocr_btn"
                 ],
+                "Tesseract": [
+                    "use_tesseract", "tesseract_language", "tesseract_update_btn"
+                ],
+                "Display": [
+                    "subtitle_enabled", "subtitle_zz_info"
+                ],
                 "Stability": [
                     ["levenshtein_threshold", "stability_time"],
                     ["levenshtein_word_threshold"],
@@ -509,6 +608,9 @@ class OCRMonitorPlugin(Plugins.Base):
         self.prev_text = None
         self.text_stable_since = None
         self.tts_played_for = None
+
+        if self.get_plugin_setting("use_tesseract"):
+            self.initialize_tesseract()
 
     def ocr_worker(self):
         """Background thread worker to perform OCR at set frequency."""
@@ -565,10 +667,18 @@ class OCRMonitorPlugin(Plugins.Base):
                             src_lang = self.get_plugin_setting("language_source", "auto")
                             target_lang = self.get_plugin_setting("language_target", "eng_Latn")
                             result_text = self.run_text_translate(result_text, src_lang, target_lang)
-                        self.run_tts(result_text)
+                        websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                               "data": result_text}))
+                        #self.run_tts(result_text)
                 if message["value"] == "show_selector":
                     # show or stop region selector
                     self.show_region_selector()
+                if message["value"] == "tesseract_update_btn":
+                    if self.get_plugin_setting("use_tesseract") :
+                        if self.initialize_tesseract():
+                            print("Tesseract OCR initialized successfully.")
+                        else:
+                            print("Failed to initialize Tesseract OCR.")
 
     def get_image_from_region(self):
         region_x = self.get_plugin_setting("region_x")
@@ -593,8 +703,86 @@ class OCRMonitorPlugin(Plugins.Base):
                 return img
         return None
 
+    def should_update_version_file_check(self, directory, current_version):
+        # check version from VERSION file
+        version_file = Path(directory / "WT_VERSION")
+        if version_file.is_file():
+            version = version_file.read_text().strip()
+            if version != current_version:
+                return True
+            else:
+                return False
+        return True
+
+    def write_version_file(self, directory, version):
+        version_file = Path(directory / "WT_VERSION")
+        version_file.write_text(version)
+
+    def load_dependency(self, dependency_module, dependency_name="module", is_python_module=False):
+        # determine version (fallback to checksum) and subdirectory for extraction
+        version = dependency_module.get("version", dependency_module.get("checksum"))
+        subdir = dependency_module.get("path") or dependency_module.get("zip_path")
+        dest_path = Path(self.plugin_dir / subdir)
+        # decide if we need to re-download
+        needs_update = self.should_update_version_file_check(dest_path, version)
+        if needs_update and dest_path.exists():
+            # avoid deleting the plugin root itself
+            if dest_path.resolve() != self.plugin_dir.resolve():
+                print(f"Removing old {dependency_name} directory")
+                shutil.rmtree(str(dest_path.resolve()))
+            else:
+                print(f"Skipping removal of plugin root directory for {dependency_name}")
+        # download if missing or outdated
+        if not dest_path.exists() or needs_update:
+            downloader.download_extract(
+                dependency_module["urls"],
+                str(dest_path.resolve()),  # extract into the dependency subdirectory
+                dependency_module["checksum"],
+                alt_fallback=True,
+                fallback_extract_func=downloader.extract_zip,
+                fallback_extract_func_args=(
+                    str(dest_path / os.path.basename(dependency_module["urls"][0])),  # downloaded zip now in dest_path
+                    str(dest_path.resolve()),
+                ),
+                title=dependency_name,
+                extract_format="zip"
+            )
+            # record version for future checks
+            self.write_version_file(dest_path, version)
+        # return either a loaded Python module or the path to a native dependency
+        if is_python_module:
+            return load_module(str(dest_path.resolve()))
+        else:
+            return str(dest_path.resolve())
+
+    def initialize_tesseract(self):
+        """Initialize Tesseract OCR module if available."""
+        if self.tesseract_module is None and Path(self.plugin_dir / "pytesseract").is_dir():
+            #self.download_model("tesseract")
+            #self.download_model("tessdata")
+            self.load_dependency(DEPENDENCY_LINKS["tesseract"], "Tesseract OCR", is_python_module=False)
+            self.load_dependency(DEPENDENCY_LINKS["tessdata"], "Tesseract Data", is_python_module=False)
+            self.tesseract_module = load_module(str(Path(self.plugin_dir / "pytesseract").resolve()))
+        if self.tesseract_module is not None and Path(self.plugin_dir / DEPENDENCY_LINKS["tesseract"]["path"] / "tesseract.exe").is_file():
+            self.tesseract_module.set_tesseract_cmd(str(Path(self.plugin_dir / DEPENDENCY_LINKS["tesseract"]["path"] / "tesseract.exe").resolve()))
+            self.tesseract_module.set_tessdata_dir(str(Path(self.plugin_dir, DEPENDENCY_LINKS["tessdata"]["path"], DEPENDENCY_LINKS["tessdata"]["zip_path"]).resolve().as_posix()))
+
+            languages_list = self.tesseract_module.get_languages(config='')
+            self.set_plugin_setting("tesseract_language", {"type": "select", "value": self.get_plugin_setting("tesseract_language"),
+                                                 "values": languages_list})
+            return True
+        return False
+
     def run_ocr(self, image):
         ocr_lang = settings.SETTINGS.GetOption("ocr_lang")
+        if self.get_plugin_setting("use_tesseract"):
+            if self.initialize_tesseract():
+                if isinstance(image, np.ndarray):
+                    image = Image.fromarray(image)
+                tesseract_lang = self.get_plugin_setting("tesseract_language")
+                lines = self.tesseract_module.image_to_string(image, lang=tesseract_lang)
+                return lines
+
         lines, image , _ = OCR.run_image_processing_from_image(image, [ocr_lang])
         return "\n".join(lines)
 
@@ -629,9 +817,25 @@ class OCRMonitorPlugin(Plugins.Base):
         text, from_code, to_code = texttranslate.TranslateLanguage(text, src_lang, target_lang, False, False)
         return text
 
-    def send_text_result(self, text):
-        """Send the detected text to the main application."""
+    def send_text_result(self, text, original_text=None):
+        """Send detected text to main application.
+        original_text is only set if text was translated."""
         if self.is_enabled(False):
+
+            # send to subtitle plugin if enabled
+            if self.get_plugin_setting("subtitle_enabled", False):
+                for plugin_inst in Plugins.plugins:
+                    if plugin_inst.is_enabled(False) and plugin_inst.__class__.__name__ == "SubtitleDisplayPlugin" and hasattr(plugin_inst, 'update_label'):
+                        try:
+                            object_data = {
+                                "text": text,
+                            }
+                            plugin_inst.update_label(object_data, True)
+                        except Exception as e:
+                            print(f"Plugin Subtitle failed in Plugin {plugin_inst.__class__.__name__}:", e)
+                            traceback.print_exc()
+
+            # send to ui via websocket
             result_obj = {
                 "type": "llm_answer",
                 "language": self.get_plugin_setting("language_target"),
