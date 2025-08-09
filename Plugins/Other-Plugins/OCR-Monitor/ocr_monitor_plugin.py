@@ -758,8 +758,6 @@ class OCRMonitorPlugin(Plugins.Base):
     def initialize_tesseract(self):
         """Initialize Tesseract OCR module if available."""
         if self.tesseract_module is None and Path(self.plugin_dir / "pytesseract").is_dir():
-            #self.download_model("tesseract")
-            #self.download_model("tessdata")
             self.load_dependency(DEPENDENCY_LINKS["tesseract"], "Tesseract OCR", is_python_module=False)
             self.load_dependency(DEPENDENCY_LINKS["tessdata"], "Tesseract Data", is_python_module=False)
             self.tesseract_module = load_module(str(Path(self.plugin_dir / "pytesseract").resolve()))
