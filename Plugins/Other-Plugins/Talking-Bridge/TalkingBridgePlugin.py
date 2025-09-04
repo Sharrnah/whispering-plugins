@@ -1,12 +1,14 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.2
+# V0.0.3
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
 #
+import io
 import time
 import traceback
+import wave
 
 import Plugins
 import VRC_OSCLib
@@ -19,6 +21,8 @@ from Models.TextTranslation import texttranslate
 class TalkingBridgePlugin(Plugins.Base):
     audio_model = None
     last_recorded_chunk_time = time.time()
+
+    last_audio = None
 
     def init(self):
         whisper_languages = sorted(LANGUAGES.keys())
@@ -58,6 +62,26 @@ class TalkingBridgePlugin(Plugins.Base):
             settings.SETTINGS.SetOption("osc_auto_processing_enabled", False)
         pass
 
+
+    def pcm_to_wav_bytes(self, pcm_bytes: bytes, sample_rate: int, channels: int, sampwidth: int):
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(sampwidth)   # e.g. 2 for 16-bit PCM
+            wf.setframerate(sample_rate)
+            wf.writeframes(pcm_bytes)
+        buf.seek(0)
+        return buf
+
+    def sts(self, wavefiledata, sample_rate):
+        wav_buf = self.pcm_to_wav_bytes(
+            wavefiledata,   # your raw PCM bytes
+            sample_rate=16000,
+            channels=1,
+            sampwidth=2     # 16-bit PCM = 2 bytes
+        )
+        self.last_audio = wav_buf
+
     def stt_intermediate(self, text, result_obj):
         current_spoken_time = time.time()
         if self.get_plugin_setting("osc_enabled"):
@@ -71,6 +95,7 @@ class TalkingBridgePlugin(Plugins.Base):
 
     def determine_tts_settings(self, language):
         if settings.SETTINGS.GetOption("tts_type") == "kokoro":
+            special_settings = tts.tts.special_settings
             tts_language = 'a'
             tts_voice = 'af_heart'
             match language.lower():
@@ -98,8 +123,31 @@ class TalkingBridgePlugin(Plugins.Base):
                 case 'z' | 'zh' | 'zho' | 'cn' | 'chinese' | 'zh-cn' | 'zh_cn' | 'mandarin' | 'zho_hans' | 'zho_hant':
                     tts_language = 'z'
                     tts_voice = 'zf_xiaobei'
-            tts.tts.set_special_setting({"language": tts_language})
+            special_settings["language"] = tts_language
+            tts.tts.set_special_setting(special_settings)
             settings.SETTINGS.SetOption('tts_voice', tts_voice)
+        if settings.SETTINGS.GetOption("tts_type") == "zonos":
+            special_settings = tts.tts.special_settings
+            tts_language = 'a'
+            match language.lower():
+                case 'e' | 'en' | 'eng' | 'english' | 'en-us' | 'en_us' | 'eng_latn':
+                    tts_language = 'en-us'
+                case 'es' | 'esp' | 'spanish' | 'es-es' | 'es_es' | 'spa_latn':
+                    tts_language = 'es'
+                case 'f' | 'fr' | 'fra' | 'french' | 'fr-fr' | 'fr_fr' | 'fra_latn':
+                    tts_language = 'fr-fr'
+                case 'h' | 'hi' | 'hin' | 'hindi' | 'hi-in' | 'hi_in' | 'hin_deva':
+                    tts_language = 'hi'
+                case 'i' | 'it' | 'ita' | 'italian' | 'it-it' | 'it_it' | 'ita_latn':
+                    tts_language = 'it'
+                case 'j' | 'ja' | 'jp' | 'jpn' | 'japanese' | 'ja-jp' | 'ja_jp' | 'jpn_jpan':
+                    tts_language = 'ja'
+                case 'b' | 'br' | 'bra' | 'brazilian_portuguese' | 'portuguese' | 'pt' | 'pt-br' | 'pt_br' | 'por_latn':
+                    tts_language = 'pt-br'
+                case 'z' | 'zh' | 'zho' | 'cn' | 'chinese' | 'zh-cn' | 'zh_cn' | 'mandarin' | 'zho_hans' | 'zho_hant':
+                    tts_language = 'cmn'
+            special_settings["language"] = tts_language
+            tts.tts.set_special_setting(special_settings)
 
     def run_tts(self, text):
         audio_device = settings.SETTINGS.GetOption("device_out_index")
@@ -110,11 +158,11 @@ class TalkingBridgePlugin(Plugins.Base):
             streamed_playback = settings.SETTINGS.GetOption("tts_streamed_playback")
             tts_wav = None
             if streamed_playback and hasattr(tts.tts, "tts_streaming"):
-                tts_wav, sample_rate = tts.tts.tts_streaming(text)
+                tts_wav, sample_rate = tts.tts.tts_streaming(text, self.last_audio)
 
             if tts_wav is None:
                 streamed_playback = False
-                tts_wav, sample_rate = tts.tts.tts(text)
+                tts_wav, sample_rate = tts.tts.tts(text, self.last_audio)
 
             if tts_wav is not None and not streamed_playback:
                 tts.tts.play_audio(tts_wav, audio_device)
