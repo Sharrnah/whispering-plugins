@@ -1,6 +1,6 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.3
+# V0.0.4
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
@@ -36,6 +36,15 @@ class TalkingBridgePlugin(Plugins.Base):
         text_translation_languages.insert(0, "")
         source_text_translation_languages.insert(0, "auto")
 
+        voices_list = []
+        if self.is_enabled(False):
+            settings.SETTINGS.SetOption("osc_auto_processing_enabled", False)
+
+            if tts.init():
+                voices_list = tts.tts.list_voices()
+                if settings.SETTINGS.GetOption("tts_type") == "zonos":
+                    voices_list.insert(0, "auto_clone")
+
         self.init_plugin_settings(
             {
                 # General
@@ -45,21 +54,21 @@ class TalkingBridgePlugin(Plugins.Base):
                 "first_speaker_language": {"type": "select", "value": "", "values": whisper_languages},
                 "first_source_language": {"type": "select", "value": "", "values": source_text_translation_languages},
                 "first_target_language": {"type": "select", "value": "", "values": text_translation_languages},
+                "first_target_voice": {"type": "select", "value": "", "values": voices_list},
                 "second_speaker_language": {"type": "select", "value": "", "values": whisper_languages},
                 "second_source_language": {"type": "select", "value": "", "values": source_text_translation_languages},
                 "second_target_language": {"type": "select", "value": "", "values": text_translation_languages},
+                "second_target_voice": {"type": "select", "value": "", "values": voices_list},
             },
             settings_groups={
                 "General": ["osc_enabled", "tts_enabled", "translation_enabled"],
                 "Languages": [
-                    ["first_speaker_language", "second_speaker_language"],
-                    ["first_source_language", "second_source_language"],
+                    ["first_speaker_language", "second_speaker_language", "first_target_voice"],
+                    ["first_source_language", "second_source_language", "second_target_voice"],
                     ["first_target_language", "second_target_language"],
                 ],
             }
         )
-        if self.is_enabled(False):
-            settings.SETTINGS.SetOption("osc_auto_processing_enabled", False)
         pass
 
 
@@ -97,41 +106,43 @@ class TalkingBridgePlugin(Plugins.Base):
         if settings.SETTINGS.GetOption("tts_type") == "kokoro":
             special_settings = tts.tts.special_settings
             tts_language = 'a'
-            tts_voice = 'af_heart'
+            #tts_voice = 'af_heart'
             match language.lower():
                 case 'e' | 'en' | 'eng' | 'english' | 'en-us' | 'en_us' | 'eng_latn':
                     tts_language = 'a'
-                    tts_voice = 'af_bella'
+                    #tts_voice = 'af_bella'
                 case 'es' | 'esp' | 'spanish' | 'es-es' | 'es_es' | 'spa_latn':
                     tts_language = 'e'
-                    tts_voice = 'ef_dora'
+                    #tts_voice = 'ef_dora'
                 case 'f' | 'fr' | 'fra' | 'french' | 'fr-fr' | 'fr_fr' | 'fra_latn':
                     tts_language = 'f'
-                    tts_voice = 'ff_siwis'
+                    #tts_voice = 'ff_siwis'
                 case 'h' | 'hi' | 'hin' | 'hindi' | 'hi-in' | 'hi_in' | 'hin_deva':
                     tts_language = 'h'
-                    tts_voice = 'hf_alpha'
+                    #tts_voice = 'hf_alpha'
                 case 'i' | 'it' | 'ita' | 'italian' | 'it-it' | 'it_it' | 'ita_latn':
                     tts_language = 'i'
-                    tts_voice = 'if_sara'
+                    #tts_voice = 'if_sara'
                 case 'j' | 'ja' | 'jp' | 'jpn' | 'japanese' | 'ja-jp' | 'ja_jp' | 'jpn_jpan':
                     tts_language = 'j'
-                    tts_voice = 'jf_gongitsune'
+                    #tts_voice = 'jf_gongitsune'
                 case 'b' | 'br' | 'bra' | 'brazilian_portuguese' | 'portuguese' | 'pt' | 'pt-br' | 'pt_br' | 'por_latn':
                     tts_language = 'p'
-                    tts_voice = 'pf_dora'
+                    #tts_voice = 'pf_dora'
                 case 'z' | 'zh' | 'zho' | 'cn' | 'chinese' | 'zh-cn' | 'zh_cn' | 'mandarin' | 'zho_hans' | 'zho_hant':
                     tts_language = 'z'
-                    tts_voice = 'zf_xiaobei'
+                    #tts_voice = 'zf_xiaobei'
             special_settings["language"] = tts_language
             tts.tts.set_special_setting(special_settings)
-            settings.SETTINGS.SetOption('tts_voice', tts_voice)
+            #settings.SETTINGS.SetOption('tts_voice', tts_voice)
         if settings.SETTINGS.GetOption("tts_type") == "zonos":
             special_settings = tts.tts.special_settings
-            tts_language = 'a'
+            tts_language = 'en-us'
             match language.lower():
                 case 'e' | 'en' | 'eng' | 'english' | 'en-us' | 'en_us' | 'eng_latn':
                     tts_language = 'en-us'
+                case 'd' | 'de' | 'deu' | 'german' | 'de-de' | 'de_de' | 'deu_latn':
+                    tts_language = 'de-de'
                 case 'es' | 'esp' | 'spanish' | 'es-es' | 'es_es' | 'spa_latn':
                     tts_language = 'es'
                 case 'f' | 'fr' | 'fra' | 'french' | 'fr-fr' | 'fr_fr' | 'fra_latn':
@@ -149,23 +160,35 @@ class TalkingBridgePlugin(Plugins.Base):
             special_settings["language"] = tts_language
             tts.tts.set_special_setting(special_settings)
 
-    def run_tts(self, text):
+    def run_tts(self, text, voice=""):
         audio_device = settings.SETTINGS.GetOption("device_out_index")
         if audio_device is None or audio_device == -1:
             audio_device = settings.SETTINGS.GetOption("device_default_out_index")
 
+        voice_ref = None
+        if voice != "" and voice != "auto_clone":
+            settings.SETTINGS.SetOption("tts_voice", voice)
+            voice_ref = None
+
+        if voice == "auto_clone":
+            voice_ref = self.last_audio
+
         if tts.init():
             streamed_playback = settings.SETTINGS.GetOption("tts_streamed_playback")
             tts_wav = None
-            if streamed_playback and hasattr(tts.tts, "tts_streaming"):
-                tts_wav, sample_rate = tts.tts.tts_streaming(text, self.last_audio)
 
-            if tts_wav is None:
-                streamed_playback = False
-                tts_wav, sample_rate = tts.tts.tts(text, self.last_audio)
+            if hasattr(tts.tts, "enqueue_tts"):
+                tts.tts.enqueue_tts(text, streamed_playback, voice_ref)
+            else:
+                if streamed_playback and hasattr(tts.tts, "tts_streaming"):
+                    tts_wav, sample_rate = tts.tts.tts_streaming(text, voice_ref)
 
-            if tts_wav is not None and not streamed_playback:
-                tts.tts.play_audio(tts_wav, audio_device)
+                if tts_wav is None:
+                    streamed_playback = False
+                    tts_wav, sample_rate = tts.tts.tts(text, voice_ref)
+
+                if tts_wav is not None and not streamed_playback:
+                    tts.tts.play_audio(tts_wav, audio_device)
         else:
             for plugin_inst in Plugins.plugins:
                 if plugin_inst.is_enabled(False) and hasattr(plugin_inst, 'tts'):
@@ -182,12 +205,15 @@ class TalkingBridgePlugin(Plugins.Base):
         # Determine target language
         target_lang = "en"
         source_lang = "en"
+        target_voice = ""
         if speaker_lang == self.get_plugin_setting("first_speaker_language"):
             source_lang = self.get_plugin_setting("first_source_language")
             target_lang = self.get_plugin_setting("first_target_language")
+            target_voice = self.get_plugin_setting("first_target_voice")
         elif speaker_lang == self.get_plugin_setting("second_speaker_language"):
             source_lang = self.get_plugin_setting("second_source_language")
             target_lang = self.get_plugin_setting("second_target_language")
+            target_voice = self.get_plugin_setting("second_target_voice")
 
         to_code = speaker_lang
         translation_text = text
@@ -212,6 +238,8 @@ class TalkingBridgePlugin(Plugins.Base):
 
         if self.get_plugin_setting("tts_enabled"):
             self.determine_tts_settings(to_code)
-            self.run_tts(translation_text)
+            if target_voice != "":
+                settings.SETTINGS.SetOption("tts_voice", target_voice)
+            self.run_tts(translation_text, voice=target_voice)
 
         return
