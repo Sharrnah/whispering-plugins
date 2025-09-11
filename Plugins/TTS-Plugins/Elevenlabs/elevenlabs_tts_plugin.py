@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.5
+# V1.1.6
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -279,7 +279,7 @@ class ElevenlabsTTSPlugin(Plugins.Base):
     def _get_voices_by_name(self, name):
         if self.voices is None or self.voices == []:
             print("No Voices found")
-            return
+            return None
         for voice in self.voices:
             if voice.name == name:
                 return voice
@@ -294,12 +294,21 @@ class ElevenlabsTTSPlugin(Plugins.Base):
         similarity_boost = self.get_plugin_setting("voice_similarity_boost", None)
         style = self.get_plugin_setting("voice_style", None)
 
+        if voice_name is None or voice_name == "":
+            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                   "data": "No voice selected! Please select a voice first."}))
+            return None
+
         if voice_name is None or voice_name == "" or self.elevenlabslib is None or self.client is None:
             print("No API instance or voice name set")
             return
 
         try:
             selected_voice = self._get_voices_by_name(voice_name)
+
+            if selected_voice is None:
+                websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                       "data": "Selected voice not found! Please select a voice that exists in your account."}))
 
             if selected_voice.settings is None:
                 settings_stability = 0.71
@@ -358,6 +367,11 @@ class ElevenlabsTTSPlugin(Plugins.Base):
         style = self.get_plugin_setting("voice_style", None)
         optimize_streaming_latency = self.get_latency_optimization_value(self.get_plugin_setting("optimize_streaming_latency"))
 
+        if voice_name is None or voice_name == "":
+            websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                   "data": "No voice selected! Please select a voice first."}))
+            return None
+
         if voice_name is None or voice_name == "" or self.elevenlabslib is None or self.client is None:
             print("No API instance or voice name set")
             return
@@ -365,6 +379,10 @@ class ElevenlabsTTSPlugin(Plugins.Base):
         self.init_audio_stream_playback()
         try:
             selected_voice = self._get_voices_by_name(voice_name)
+
+            if selected_voice is None:
+                websocket.BroadcastMessage(json.dumps({"type": "info",
+                                                       "data": "Selected voice not found! Please select a voice that exists in your account."}))
 
             if selected_voice.settings is None:
                 settings_stability = 0.71
