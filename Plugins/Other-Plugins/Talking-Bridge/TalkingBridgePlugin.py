@@ -1,12 +1,11 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.4
+# V0.0.5
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
 #
 import io
-import time
 import traceback
 import wave
 
@@ -14,31 +13,35 @@ import Plugins
 import VRC_OSCLib
 import settings
 from Models.TTS import tts
-from whisper.tokenizer import LANGUAGES
 
 from Models.TextTranslation import texttranslate
 
 class TalkingBridgePlugin(Plugins.Base):
     audio_model = None
-    last_recorded_chunk_time = time.time()
+    #last_recorded_chunk_time = None
 
     last_audio = None
 
     def init(self):
-        whisper_languages = sorted(LANGUAGES.keys())
-        whisper_languages.insert(0, "auto")
+        # get STT languages
+        whisper_languages = settings.SETTINGS.GetOption("whisper_languages")
+        whisper_languages_list = [["", ""]]
+        if whisper_languages is not None and len(whisper_languages) > 0:
+            whisper_languages_list = [[lang['name'], lang['code']] for lang in whisper_languages]
 
-        text_translation_languages = []
+        # get text translation languages
+        source_text_translation_languages = []
+        target_text_translation_languages = []
         texttranslate_languages = texttranslate.GetInstalledLanguageNames()
         if texttranslate_languages is not None:
-            text_translation_languages = [lang['code'] for lang in texttranslate_languages]
-        source_text_translation_languages = list(text_translation_languages)
-        text_translation_languages.insert(0, "")
-        source_text_translation_languages.insert(0, "auto")
+            source_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
+            source_text_translation_languages.insert(0, ["Auto", "auto"])
+            target_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
 
         voices_list = []
         if self.is_enabled(False):
             settings.SETTINGS.SetOption("osc_auto_processing_enabled", False)
+            settings.SETTINGS.SetOption("osc_force_activity_indication", True)
 
             if tts.init():
                 voices_list = tts.tts.list_voices()
@@ -51,13 +54,13 @@ class TalkingBridgePlugin(Plugins.Base):
                 "osc_enabled": False,
                 "tts_enabled": False,
                 "translation_enabled": False,
-                "first_speaker_language": {"type": "select", "value": "", "values": whisper_languages},
-                "first_source_language": {"type": "select", "value": "", "values": source_text_translation_languages},
-                "first_target_language": {"type": "select", "value": "", "values": text_translation_languages},
+                "first_speaker_language": {"type": "select_completion", "value": "", "values": whisper_languages_list},
+                "first_source_language": {"type": "select_completion", "value": "", "values": source_text_translation_languages},
+                "first_target_language": {"type": "select_completion", "value": "", "values": target_text_translation_languages},
                 "first_target_voice": {"type": "select", "value": "", "values": voices_list},
-                "second_speaker_language": {"type": "select", "value": "", "values": whisper_languages},
-                "second_source_language": {"type": "select", "value": "", "values": source_text_translation_languages},
-                "second_target_language": {"type": "select", "value": "", "values": text_translation_languages},
+                "second_speaker_language": {"type": "select_completion", "value": "", "values": whisper_languages_list},
+                "second_source_language": {"type": "select_completion", "value": "", "values": source_text_translation_languages},
+                "second_target_language": {"type": "select_completion", "value": "", "values": target_text_translation_languages},
                 "second_target_voice": {"type": "select", "value": "", "values": voices_list},
             },
             settings_groups={
@@ -83,24 +86,26 @@ class TalkingBridgePlugin(Plugins.Base):
         return buf
 
     def sts(self, wavefiledata, sample_rate):
-        wav_buf = self.pcm_to_wav_bytes(
-            wavefiledata,   # your raw PCM bytes
-            sample_rate=16000,
-            channels=1,
-            sampwidth=2     # 16-bit PCM = 2 bytes
-        )
-        self.last_audio = wav_buf
+        if self.is_enabled():
+            wav_buf = self.pcm_to_wav_bytes(
+                wavefiledata,   # your raw PCM bytes
+                sample_rate=16000,
+                channels=1,
+                sampwidth=2     # 16-bit PCM = 2 bytes
+            )
+            self.last_audio = wav_buf
 
-    def stt_intermediate(self, text, result_obj):
-        current_spoken_time = time.time()
-        if self.get_plugin_setting("osc_enabled"):
-            osc_ip = settings.SETTINGS.GetOption("osc_ip")
-            osc_port = settings.SETTINGS.GetOption("osc_port")
-
-            if current_spoken_time - self.last_recorded_chunk_time > 2.0:
-                self.last_recorded_chunk_time = current_spoken_time
-
-            VRC_OSCLib.Bool(True, "/chatbox/typing", IP=osc_ip, PORT=osc_port)
+    # def stt_intermediate(self, text, result_obj):
+    #     if self.is_enabled():
+    #         current_spoken_time = time.time()
+    #         if self.get_plugin_setting("osc_enabled"):
+    #             osc_ip = settings.SETTINGS.GetOption("osc_ip")
+    #             osc_port = settings.SETTINGS.GetOption("osc_port")
+    #
+    #             if self.last_recorded_chunk_time is None or current_spoken_time - self.last_recorded_chunk_time > 2.0:
+    #                 self.last_recorded_chunk_time = current_spoken_time
+    #
+    #                 VRC_OSCLib.Bool(True, "/chatbox/typing", IP=osc_ip, PORT=osc_port)
 
     def determine_tts_settings(self, language):
         if settings.SETTINGS.GetOption("tts_type") == "kokoro":
@@ -200,46 +205,46 @@ class TalkingBridgePlugin(Plugins.Base):
         pass
 
     def stt(self, text, result_obj):
-        speaker_lang = result_obj["language"]
+        if self.is_enabled():
+            speaker_lang = result_obj["language"]
 
-        # Determine target language
-        target_lang = "en"
-        source_lang = "en"
-        target_voice = ""
-        if speaker_lang == self.get_plugin_setting("first_speaker_language"):
-            source_lang = self.get_plugin_setting("first_source_language")
-            target_lang = self.get_plugin_setting("first_target_language")
-            target_voice = self.get_plugin_setting("first_target_voice")
-        elif speaker_lang == self.get_plugin_setting("second_speaker_language"):
-            source_lang = self.get_plugin_setting("second_source_language")
-            target_lang = self.get_plugin_setting("second_target_language")
-            target_voice = self.get_plugin_setting("second_target_voice")
+            # Determine target language
+            target_lang = "en"
+            source_lang = "en"
+            target_voice = ""
+            if speaker_lang == self.get_plugin_setting("first_speaker_language"):
+                source_lang = self.get_plugin_setting("first_source_language")
+                target_lang = self.get_plugin_setting("first_target_language")
+                target_voice = self.get_plugin_setting("first_target_voice")
+            elif speaker_lang == self.get_plugin_setting("second_speaker_language"):
+                source_lang = self.get_plugin_setting("second_source_language")
+                target_lang = self.get_plugin_setting("second_target_language")
+                target_voice = self.get_plugin_setting("second_target_voice")
 
-        to_code = speaker_lang
-        translation_text = text
-        if self.get_plugin_setting("translation_enabled"):
-            translation_text, from_code, to_code = texttranslate.TranslateLanguage(text, source_lang, target_lang)
-            print("to_code:", to_code)
+            to_code = speaker_lang
+            translation_text = text
+            if self.get_plugin_setting("translation_enabled"):
+                translation_text, from_code, to_code = texttranslate.TranslateLanguage(text, source_lang, target_lang)
+                print("to_code:", to_code)
 
-        if self.get_plugin_setting("osc_enabled"):
-            osc_ip = settings.SETTINGS.GetOption("osc_ip")
-            osc_port = settings.SETTINGS.GetOption("osc_port")
-            osc_address = settings.SETTINGS.GetOption("osc_address")
-            osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
-            osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
-            osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
-            osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
+            if self.get_plugin_setting("osc_enabled"):
+                osc_ip = settings.SETTINGS.GetOption("osc_ip")
+                osc_port = settings.SETTINGS.GetOption("osc_port")
+                osc_address = settings.SETTINGS.GetOption("osc_address")
+                osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
+                osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
+                osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
+                osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
 
-            VRC_OSCLib.Chat_chunks(translation_text,
-                                   nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
-                                   chunk_size=osc_chat_limit, delay=osc_time_limit,
-                                   initial_delay=osc_initial_time_limit,
-                                   convert_ascii=osc_convert_ascii)
+                VRC_OSCLib.Chat_chunks(translation_text,
+                                       nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
+                                       chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                       initial_delay=osc_initial_time_limit,
+                                       convert_ascii=osc_convert_ascii)
 
-        if self.get_plugin_setting("tts_enabled"):
-            self.determine_tts_settings(to_code)
-            if target_voice != "":
-                settings.SETTINGS.SetOption("tts_voice", target_voice)
-            self.run_tts(translation_text, voice=target_voice)
-
+            if self.get_plugin_setting("tts_enabled"):
+                self.determine_tts_settings(to_code)
+                if target_voice != "":
+                    settings.SETTINGS.SetOption("tts_voice", target_voice)
+                self.run_tts(translation_text, voice=target_voice)
         return
