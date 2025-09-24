@@ -1,16 +1,22 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.5
+# V0.0.6
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
 #
 import io
+import threading
+import time
 import traceback
 import wave
 
+import soundfile
+from pydub import AudioSegment
+
 import Plugins
 import VRC_OSCLib
+import audio_tools
 import settings
 from Models.TTS import tts
 
@@ -21,6 +27,10 @@ class TalkingBridgePlugin(Plugins.Base):
     #last_recorded_chunk_time = None
 
     last_audio = None
+
+    audio_file_target_sample_rate = 44000
+    LAST_STT_TIME = time.time()
+    advert_thread = None
 
     def init(self):
         # get STT languages
@@ -62,6 +72,13 @@ class TalkingBridgePlugin(Plugins.Base):
                 "second_source_language": {"type": "select_completion", "value": "", "values": source_text_translation_languages},
                 "second_target_language": {"type": "select_completion", "value": "", "values": target_text_translation_languages},
                 "second_target_voice": {"type": "select", "value": "", "values": voices_list},
+                "advert_active": False,
+                "advert_inactivity_time": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 100},
+                "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 0},
+                "advert_text": {"type": "textarea", "rows": 6, "value": "I translate between Japanese and English\n\nWait for translation to finish before speaking again\n\nBeta Test\nPowered by Whispering Tiger\nhttps://whispering-tiger.github.io/"},
+                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語の間で翻訳します\n\n翻訳が完了するまで待ってから、もう一度話してください\n\nベータテスト\n提供： Whispering Tiger\nhttps://whispering-tiger.github.io/"},
+                "advert_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
+                "advert_info": {"type": "label", "label": "", "style": "left"},
             },
             settings_groups={
                 "General": ["osc_enabled", "tts_enabled", "translation_enabled"],
@@ -70,10 +87,24 @@ class TalkingBridgePlugin(Plugins.Base):
                     ["first_source_language", "second_source_language", "second_target_voice"],
                     ["first_target_language", "second_target_language"],
                 ],
+                "Advertisement": [
+                    ["advert_active",   "advert_frequency",       "advert_text", "advert_text_2"],
+                    ["advert_info", "advert_inactivity_time", "advert_audio"],
+                ],
             }
         )
+
+        self.on_enable()
+
         pass
 
+
+    def convert_mp3_to_wav(self, mp3_path):
+        audio = AudioSegment.from_mp3(mp3_path)
+        wav_io = io.BytesIO()
+        audio.export(wav_io, format="wav")
+        wav_io.seek(0)
+        return wav_io
 
     def pcm_to_wav_bytes(self, pcm_bytes: bytes, sample_rate: int, channels: int, sampwidth: int):
         buf = io.BytesIO()
@@ -85,8 +116,56 @@ class TalkingBridgePlugin(Plugins.Base):
         buf.seek(0)
         return buf
 
+    def play_audio_on_device(self, wav, audio_device, source_sample_rate=22050, audio_device_channel_num=2,
+                             target_channels=2, input_channels=1, dtype="int16"):
+        secondary_audio_device = None
+        if settings.GetOption("tts_use_secondary_playback") and (
+                (settings.GetOption("tts_secondary_playback_device") == -1 and audio_device != settings.GetOption(
+                    "device_default_out_index")) or
+                (settings.GetOption("tts_secondary_playback_device") > -1 and audio_device != settings.GetOption(
+                    "tts_secondary_playback_device"))):
+            secondary_audio_device = settings.GetOption("tts_secondary_playback_device")
+            if secondary_audio_device == -1:
+                secondary_audio_device = settings.GetOption("device_default_out_index")
+
+        stop_play = not self.get_plugin_setting("allow_overlapping_audio")
+
+        audio_tools.play_audio(wav, audio_device,
+                               source_sample_rate=source_sample_rate,
+                               audio_device_channel_num=audio_device_channel_num,
+                               target_channels=target_channels,
+                               input_channels=input_channels,
+                               dtype=dtype,
+                               secondary_device=secondary_audio_device,
+                               stop_play=stop_play, tag="tts")
+
+    def play_audio_file(self, file_path=""):
+        if file_path != "":
+            if file_path.endswith(".wav"):
+                wav_numpy = audio_tools.load_wav_to_bytes(file_path, target_sample_rate=self.audio_file_target_sample_rate)
+            elif file_path.endswith(".mp3"):
+                mp3_file_obj = self.convert_mp3_to_wav(file_path)
+                wav_numpy = audio_tools.load_wav_to_bytes(mp3_file_obj, target_sample_rate=self.audio_file_target_sample_rate)
+            else:
+                # unsupported file format
+                return
+
+            # Convert numpy array back to WAV bytes
+            with io.BytesIO() as byte_io:
+                soundfile.write(byte_io, wav_numpy, samplerate=self.audio_file_target_sample_rate,
+                                format='WAV')  # Explicitly specify format
+                wav_bytes = byte_io.getvalue()
+
+            self.play_audio_on_device(wav_bytes, settings.GetOption("device_out_index"),
+                                      source_sample_rate=self.audio_file_target_sample_rate,
+                                      audio_device_channel_num=2,
+                                      target_channels=2,
+                                      input_channels=1,
+                                      dtype="int16")
+
     def sts(self, wavefiledata, sample_rate):
         if self.is_enabled():
+            self.LAST_STT_TIME = time.time()
             wav_buf = self.pcm_to_wav_bytes(
                 wavefiledata,   # your raw PCM bytes
                 sample_rate=16000,
@@ -94,6 +173,10 @@ class TalkingBridgePlugin(Plugins.Base):
                 sampwidth=2     # 16-bit PCM = 2 bytes
             )
             self.last_audio = wav_buf
+
+    def stt_intermediate(self, text, result_obj):
+        if self.is_enabled():
+            self.LAST_STT_TIME = time.time()
 
     # def stt_intermediate(self, text, result_obj):
     #     if self.is_enabled():
@@ -107,39 +190,84 @@ class TalkingBridgePlugin(Plugins.Base):
     #
     #                 VRC_OSCLib.Bool(True, "/chatbox/typing", IP=osc_ip, PORT=osc_port)
 
+    def advert_thread_func(self):
+        last_advert_time = 0
+        last_advert_text = 0
+        while self.is_enabled():
+            advert_inactivity_time = self.get_plugin_setting("advert_inactivity_time")
+            advert_frequency = self.get_plugin_setting("advert_frequency")
+            advert_text_1 = self.get_plugin_setting("advert_text")
+            advert_text_2 = self.get_plugin_setting("advert_text_2")
+            advert_audio = self.get_plugin_setting("advert_audio")
+
+            if advert_frequency == 0 or not self.get_plugin_setting("advert_active"):
+                time.sleep(100)
+                continue
+
+            if advert_inactivity_time < (time.time() - self.LAST_STT_TIME):
+                if (time.time() - last_advert_time) > advert_frequency:
+                    last_advert_time = time.time()
+
+                    if last_advert_text == 1 and advert_text_2 != "":
+                        advert_text = advert_text_2
+                        last_advert_text = 2
+                    else:
+                        advert_text = advert_text_1
+                        last_advert_text = 1
+
+                    if advert_text != "" and self.get_plugin_setting("osc_enabled"):
+                        osc_ip = settings.SETTINGS.GetOption("osc_ip")
+                        osc_port = settings.SETTINGS.GetOption("osc_port")
+                        osc_address = settings.SETTINGS.GetOption("osc_address")
+                        osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
+                        osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
+                        osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
+                        osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
+
+                        VRC_OSCLib.Chat_chunks(advert_text,
+                                               nofify=False, address=osc_address, ip=osc_ip, port=osc_port,
+                                               chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                               initial_delay=osc_initial_time_limit,
+                                               convert_ascii=osc_convert_ascii)
+                    if advert_audio != "":
+                        self.play_audio_file(advert_audio)
+            time.sleep(1)
+        pass
+
+    def on_enable(self):
+        if self.is_enabled(False):
+            self.advert_thread = threading.Thread(target=self.advert_thread_func, daemon=True)
+            self.advert_thread.start()
+
+    def on_disable(self):
+        if not self.is_enabled(False):
+            if self.advert_thread is not None and self.advert_thread.is_alive():
+                self.advert_thread.join(timeout=1)
+            self.advert_thread = None
+
     def determine_tts_settings(self, language):
         if settings.SETTINGS.GetOption("tts_type") == "kokoro":
             special_settings = tts.tts.special_settings
             tts_language = 'a'
-            #tts_voice = 'af_heart'
             match language.lower():
                 case 'e' | 'en' | 'eng' | 'english' | 'en-us' | 'en_us' | 'eng_latn':
                     tts_language = 'a'
-                    #tts_voice = 'af_bella'
                 case 'es' | 'esp' | 'spanish' | 'es-es' | 'es_es' | 'spa_latn':
                     tts_language = 'e'
-                    #tts_voice = 'ef_dora'
                 case 'f' | 'fr' | 'fra' | 'french' | 'fr-fr' | 'fr_fr' | 'fra_latn':
                     tts_language = 'f'
-                    #tts_voice = 'ff_siwis'
                 case 'h' | 'hi' | 'hin' | 'hindi' | 'hi-in' | 'hi_in' | 'hin_deva':
                     tts_language = 'h'
-                    #tts_voice = 'hf_alpha'
                 case 'i' | 'it' | 'ita' | 'italian' | 'it-it' | 'it_it' | 'ita_latn':
                     tts_language = 'i'
-                    #tts_voice = 'if_sara'
                 case 'j' | 'ja' | 'jp' | 'jpn' | 'japanese' | 'ja-jp' | 'ja_jp' | 'jpn_jpan':
                     tts_language = 'j'
-                    #tts_voice = 'jf_gongitsune'
                 case 'b' | 'br' | 'bra' | 'brazilian_portuguese' | 'portuguese' | 'pt' | 'pt-br' | 'pt_br' | 'por_latn':
                     tts_language = 'p'
-                    #tts_voice = 'pf_dora'
                 case 'z' | 'zh' | 'zho' | 'cn' | 'chinese' | 'zh-cn' | 'zh_cn' | 'mandarin' | 'zho_hans' | 'zho_hant':
                     tts_language = 'z'
-                    #tts_voice = 'zf_xiaobei'
             special_settings["language"] = tts_language
             tts.tts.set_special_setting(special_settings)
-            #settings.SETTINGS.SetOption('tts_voice', tts_voice)
         if settings.SETTINGS.GetOption("tts_type") == "zonos":
             special_settings = tts.tts.special_settings
             tts_language = 'en-us'
@@ -206,6 +334,7 @@ class TalkingBridgePlugin(Plugins.Base):
 
     def stt(self, text, result_obj):
         if self.is_enabled():
+            self.LAST_STT_TIME = time.time()
             speaker_lang = result_obj["language"]
 
             # Determine target language
