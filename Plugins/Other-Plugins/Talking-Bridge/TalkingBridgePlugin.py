@@ -76,7 +76,7 @@ class TalkingBridgePlugin(Plugins.Base):
                 "advert_inactivity_time": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 100},
                 "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 0},
                 "advert_text": {"type": "textarea", "rows": 6, "value": "I translate between Japanese and English\n\nWait for translation to finish before speaking again\n\nBeta Test\nPowered by Whispering Tiger\nhttps://whispering-tiger.github.io/"},
-                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語の間で翻訳します\n\n翻訳が完了するまで待ってから、もう一度話してください\n\nベータテスト\n提供： Whispering Tiger\nhttps://whispering-tiger.github.io/"},
+                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語のあいだを自動翻訳します。\n\n翻訳が終わるまで話さずにお待ちください。\n\nベータ版\nWhispering Tiger 提供\nhttps://whispering-tiger.github.io/"},
                 "advert_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
                 "advert_info": {"type": "label", "label": "", "style": "left"},
             },
