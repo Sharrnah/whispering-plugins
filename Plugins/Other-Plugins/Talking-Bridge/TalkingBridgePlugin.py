@@ -1,6 +1,6 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.6
+# V0.0.7
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
@@ -73,11 +73,21 @@ class TalkingBridgePlugin(Plugins.Base):
                 "second_target_language": {"type": "select_completion", "value": "", "values": target_text_translation_languages},
                 "second_target_voice": {"type": "select", "value": "", "values": voices_list},
                 "advert_active": False,
-                "advert_inactivity_time": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 110},
-                "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 60},
+                "advert_inactivity_time": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 100},
+                "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 0},
                 "advert_text": {"type": "textarea", "rows": 6, "value": "I translate between Japanese and English\n\nWait for translation to finish before speaking again\n\nBeta Test\nPowered by Whispering Tiger\nhttps://whispering-tiger.github.io/"},
-                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語のあいだを自動翻訳します。\n\n翻訳が終わるまで話さずにお待ちください。\n\nベータ版\nWhispering Tiger 提供\nhttps://whispering-tiger.github.io/"},
+                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語の間で翻訳します\n\n翻訳が完了するまで待ってから、もう一度話してください\n\nベータテスト\n提供： Whispering Tiger\nhttps://whispering-tiger.github.io/"},
                 "advert_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
+                "fallback_action": {"type": "select_textvalue", "value": "", "values":
+                    [
+                        ["Do nothing", ""],
+                        ["Translate to First language", "ToFirst"],
+                        ["Translate to Second language", "ToSecond"],
+                        ["Play audio and OSC Text", "playAudio"]
+                    ]
+                },
+                "fallback_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
+                "fallback_text": {"type": "textarea", "rows": 3, "value": "Sorry, i only speak English and Japanese"},
                 "advert_info": {"type": "label", "label": "", "style": "left"},
             },
             settings_groups={
@@ -86,6 +96,9 @@ class TalkingBridgePlugin(Plugins.Base):
                     ["first_speaker_language", "second_speaker_language", "first_target_voice"],
                     ["first_source_language", "second_source_language", "second_target_voice"],
                     ["first_target_language", "second_target_language"],
+                ],
+                "Fallback": [
+                    "fallback_action", "fallback_audio", "fallback_text"
                 ],
                 "Advertisement": [
                     ["advert_active",   "advert_frequency",       "advert_text", "advert_text_2"],
@@ -177,18 +190,6 @@ class TalkingBridgePlugin(Plugins.Base):
     def stt_intermediate(self, text, result_obj):
         if self.is_enabled():
             self.LAST_STT_TIME = time.time()
-
-    # def stt_intermediate(self, text, result_obj):
-    #     if self.is_enabled():
-    #         current_spoken_time = time.time()
-    #         if self.get_plugin_setting("osc_enabled"):
-    #             osc_ip = settings.SETTINGS.GetOption("osc_ip")
-    #             osc_port = settings.SETTINGS.GetOption("osc_port")
-    #
-    #             if self.last_recorded_chunk_time is None or current_spoken_time - self.last_recorded_chunk_time > 2.0:
-    #                 self.last_recorded_chunk_time = current_spoken_time
-    #
-    #                 VRC_OSCLib.Bool(True, "/chatbox/typing", IP=osc_ip, PORT=osc_port)
 
     def advert_thread_func(self):
         last_advert_time = 0
@@ -314,6 +315,8 @@ class TalkingBridgePlugin(Plugins.Base):
                 tts.tts.enqueue_tts(text, streamed_playback, voice_ref)
             else:
                 if streamed_playback and hasattr(tts.tts, "tts_streaming"):
+                    if hasattr(tts.tts, "stop"):
+                        tts.tts.stop()
                     tts_wav, sample_rate = tts.tts.tts_streaming(text, voice_ref)
 
                 if tts_wav is None:
@@ -334,6 +337,14 @@ class TalkingBridgePlugin(Plugins.Base):
 
     def stt(self, text, result_obj):
         if self.is_enabled():
+            osc_ip = settings.SETTINGS.GetOption("osc_ip")
+            osc_port = settings.SETTINGS.GetOption("osc_port")
+            osc_address = settings.SETTINGS.GetOption("osc_address")
+            osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
+            osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
+            osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
+            osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
+
             self.LAST_STT_TIME = time.time()
             speaker_lang = result_obj["language"]
 
@@ -349,6 +360,32 @@ class TalkingBridgePlugin(Plugins.Base):
                 source_lang = self.get_plugin_setting("second_source_language")
                 target_lang = self.get_plugin_setting("second_target_language")
                 target_voice = self.get_plugin_setting("second_target_voice")
+            else:
+                fallback_action = self.get_plugin_setting("fallback_action")
+                match fallback_action:
+                    case "ToFirst":
+                        source_lang = "auto"
+                        target_lang = self.get_plugin_setting("first_target_language")
+                        target_voice = self.get_plugin_setting("first_target_voice")
+                    case "ToSecond":
+                        source_lang = "auto"
+                        target_lang = self.get_plugin_setting("second_target_language")
+                        target_voice = self.get_plugin_setting("second_target_voice")
+                    case "playAudio":
+                        fallback_audio = self.get_plugin_setting("fallback_audio")
+                        fallback_text = self.get_plugin_setting("fallback_text")
+                        if fallback_audio != "":
+                            self.play_audio_file(fallback_audio)
+                        if fallback_text != "" and self.get_plugin_setting("osc_enabled"):
+                            VRC_OSCLib.Chat_chunks(fallback_text,
+                                                   nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
+                                                   chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                                   initial_delay=osc_initial_time_limit,
+                                                   convert_ascii=osc_convert_ascii)
+                        return
+                    case _:
+                        return
+
 
             to_code = speaker_lang
             translation_text = text
@@ -357,13 +394,6 @@ class TalkingBridgePlugin(Plugins.Base):
                 print("to_code:", to_code)
 
             if self.get_plugin_setting("osc_enabled"):
-                osc_ip = settings.SETTINGS.GetOption("osc_ip")
-                osc_port = settings.SETTINGS.GetOption("osc_port")
-                osc_address = settings.SETTINGS.GetOption("osc_address")
-                osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
-                osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
-                osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
-                osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
 
                 VRC_OSCLib.Chat_chunks(translation_text,
                                        nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
