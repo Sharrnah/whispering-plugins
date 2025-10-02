@@ -1,6 +1,6 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.7
+# V0.0.8
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
@@ -21,6 +21,9 @@ import settings
 from Models.TTS import tts
 
 from Models.TextTranslation import texttranslate
+from Models import languageClassification
+
+from Utilities.iso_converter import LanguageCodeConverter
 
 class TalkingBridgePlugin(Plugins.Base):
     audio_model = None
@@ -31,6 +34,8 @@ class TalkingBridgePlugin(Plugins.Base):
     audio_file_target_sample_rate = 44000
     LAST_STT_TIME = time.time()
     advert_thread = None
+
+    language_code_converter = LanguageCodeConverter()
 
     def init(self):
         # get STT languages
@@ -45,7 +50,7 @@ class TalkingBridgePlugin(Plugins.Base):
         texttranslate_languages = texttranslate.GetInstalledLanguageNames()
         if texttranslate_languages is not None:
             source_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
-            source_text_translation_languages.insert(0, ["Auto", "auto"])
+            #source_text_translation_languages.insert(0, ["Auto", "auto"])
             target_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
 
         voices_list = []
@@ -75,8 +80,8 @@ class TalkingBridgePlugin(Plugins.Base):
                 "advert_active": False,
                 "advert_inactivity_time": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 100},
                 "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 0},
-                "advert_text": {"type": "textarea", "rows": 6, "value": "I translate between Japanese and English\n\nWait for translation to finish before speaking again\n\nBeta Test\nPowered by Whispering Tiger\nhttps://whispering-tiger.github.io/"},
-                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語の間で翻訳します\n\n翻訳が完了するまで待ってから、もう一度話してください\n\nベータテスト\n提供： Whispering Tiger\nhttps://whispering-tiger.github.io/"},
+                "advert_text": {"type": "textarea", "rows": 6, "value": "I auto translate between Japanese and English.\n\nStay close and speak.\nWait for translation to finish before speaking again.\n\n🐅 Whispering Tiger\nhttps://whispering-tiger.github.io/"},
+                "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語のあいだを自動翻訳します。\n\n近くにいて、話しかけて。\n翻訳が終わるまで話さずにお待ちください。\n\n🐅 Whispering Tiger\nhttps://whispering-tiger.github.io/"},
                 "advert_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
                 "fallback_action": {"type": "select_textvalue", "value": "", "values":
                     [
@@ -89,13 +94,14 @@ class TalkingBridgePlugin(Plugins.Base):
                 "fallback_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
                 "fallback_text": {"type": "textarea", "rows": 3, "value": "Sorry, i only speak English and Japanese"},
                 "advert_info": {"type": "label", "label": "", "style": "left"},
+                "language_probability_threshold": {"type": "slider", "min": 0, "max": 1, "step": 0.1, "value": 0.5},
             },
             settings_groups={
                 "General": ["osc_enabled", "tts_enabled", "translation_enabled"],
                 "Languages": [
                     ["first_speaker_language", "second_speaker_language", "first_target_voice"],
                     ["first_source_language", "second_source_language", "second_target_voice"],
-                    ["first_target_language", "second_target_language"],
+                    ["first_target_language", "second_target_language", "language_probability_threshold"],
                 ],
                 "Fallback": [
                     "fallback_action", "fallback_audio", "fallback_text"
@@ -246,9 +252,33 @@ class TalkingBridgePlugin(Plugins.Base):
                 self.advert_thread.join(timeout=1)
             self.advert_thread = None
 
+    def get_all_special_settings(self, type):
+        current = settings.GetOption("special_settings") or {}
+        special_settings = dict(current)
+        if type in special_settings:
+            return special_settings[type]
+        return {}
+
+    def get_special_settings(self, type, name):
+        current = settings.GetOption("special_settings") or {}
+        special_settings = dict(current)
+        if type in special_settings and name in special_settings[type]:
+            return special_settings[type][name]
+        return None
+
+    def update_special_settings(self, type, name, value):
+        current = settings.GetOption("special_settings") or {}
+        special_settings = dict(current)
+        if type not in special_settings:
+            special_settings[type] = {}
+        special_settings[type][name] = value
+        settings.SetOption("special_settings", special_settings)
+
     def determine_tts_settings(self, language):
         if settings.SETTINGS.GetOption("tts_type") == "kokoro":
-            special_settings = tts.tts.special_settings
+            #special_settings = tts.tts.special_settings
+            special_settings = self.get_all_special_settings("tts_kokoro")
+            #self.update_special_settings("tts_kokoro", "language", language)
             tts_language = 'a'
             match language.lower():
                 case 'e' | 'en' | 'eng' | 'english' | 'en-us' | 'en_us' | 'eng_latn':
@@ -268,9 +298,11 @@ class TalkingBridgePlugin(Plugins.Base):
                 case 'z' | 'zh' | 'zho' | 'cn' | 'chinese' | 'zh-cn' | 'zh_cn' | 'mandarin' | 'zho_hans' | 'zho_hant':
                     tts_language = 'z'
             special_settings["language"] = tts_language
-            tts.tts.set_special_setting(special_settings)
+            #tts.tts.set_special_setting(special_settings)
+            self.update_special_settings("tts_kokoro", "language", tts_language)
         if settings.SETTINGS.GetOption("tts_type") == "zonos":
-            special_settings = tts.tts.special_settings
+            #special_settings = tts.tts.special_settings
+            special_settings = self.get_all_special_settings("tts_zonos")
             tts_language = 'en-us'
             match language.lower():
                 case 'e' | 'en' | 'eng' | 'english' | 'en-us' | 'en_us' | 'eng_latn':
@@ -292,7 +324,8 @@ class TalkingBridgePlugin(Plugins.Base):
                 case 'z' | 'zh' | 'zho' | 'cn' | 'chinese' | 'zh-cn' | 'zh_cn' | 'mandarin' | 'zho_hans' | 'zho_hant':
                     tts_language = 'cmn'
             special_settings["language"] = tts_language
-            tts.tts.set_special_setting(special_settings)
+            #tts.tts.set_special_setting(special_settings)
+            self.update_special_settings("tts_zonos", "language", tts_language)
 
     def run_tts(self, text, voice=""):
         audio_device = settings.SETTINGS.GetOption("device_out_index")
@@ -315,8 +348,8 @@ class TalkingBridgePlugin(Plugins.Base):
                 tts.tts.enqueue_tts(text, streamed_playback, voice_ref)
             else:
                 if streamed_playback and hasattr(tts.tts, "tts_streaming"):
-                    if hasattr(tts.tts, "stop"):
-                        tts.tts.stop()
+                    #if hasattr(tts.tts, "stop"):
+                    #    tts.tts.stop()
                     tts_wav, sample_rate = tts.tts.tts_streaming(text, voice_ref)
 
                 if tts_wav is None:
@@ -347,16 +380,39 @@ class TalkingBridgePlugin(Plugins.Base):
 
             self.LAST_STT_TIME = time.time()
             speaker_lang = result_obj["language"]
+            language_probability_threshold = self.get_plugin_setting("language_probability_threshold")
+
+            # @todo lid detected language has to fit with text language also make probability configurable
+            language_code_type = self.language_code_converter.any_to_code_type(self.get_plugin_setting("first_source_language"))[0]
+            text_lang = ""
+
+            if "language_probability" in result_obj and result_obj["language_probability"] <= language_probability_threshold:
+                speaker_lang_probability = result_obj["language_probability"]
+                try:
+                    text_lang_detected, text_lang_probability = languageClassification.classify(text, to_code=language_code_type)
+                    if text_lang_probability > speaker_lang_probability:
+                        text_lang = text_lang_detected
+                        print("Text language detected:", text_lang)
+                except Exception as e:
+                    print("Text language detection failed:", e)
+            else:
+                try:
+                    text_lang_detected, text_lang_probability = languageClassification.classify(text, to_code=language_code_type)
+                    if text_lang_probability >= language_probability_threshold:
+                        text_lang = text_lang_detected
+                        print("Text language detected B:", text_lang)
+                except Exception as e:
+                    print("Text language detection failed B:", e)
 
             # Determine target language
             target_lang = "en"
             source_lang = "en"
             target_voice = ""
-            if speaker_lang == self.get_plugin_setting("first_speaker_language"):
+            if (text_lang != "" and text_lang == self.get_plugin_setting("first_source_language")) or speaker_lang == self.get_plugin_setting("first_speaker_language"):
                 source_lang = self.get_plugin_setting("first_source_language")
                 target_lang = self.get_plugin_setting("first_target_language")
                 target_voice = self.get_plugin_setting("first_target_voice")
-            elif speaker_lang == self.get_plugin_setting("second_speaker_language"):
+            elif (text_lang != "" and text_lang == self.get_plugin_setting("second_source_language")) or speaker_lang == self.get_plugin_setting("second_speaker_language"):
                 source_lang = self.get_plugin_setting("second_source_language")
                 target_lang = self.get_plugin_setting("second_target_language")
                 target_voice = self.get_plugin_setting("second_target_voice")
@@ -374,7 +430,7 @@ class TalkingBridgePlugin(Plugins.Base):
                     case "playAudio":
                         fallback_audio = self.get_plugin_setting("fallback_audio")
                         fallback_text = self.get_plugin_setting("fallback_text")
-                        if fallback_audio != "":
+                        if fallback_audio != "" and self.get_plugin_setting("tts_enabled"):
                             self.play_audio_file(fallback_audio)
                         if fallback_text != "" and self.get_plugin_setting("osc_enabled"):
                             VRC_OSCLib.Chat_chunks(fallback_text,
