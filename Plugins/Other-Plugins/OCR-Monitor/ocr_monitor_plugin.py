@@ -1,6 +1,6 @@
 # ============================================================
 # OCR Monitor plugin for Whispering Tiger
-# Version: 0.0.2
+# Version: 0.0.3
 # This will monitor a region of the screen for text and send it to Whispering Tiger for processing.
 # ============================================================
 import json
@@ -9,8 +9,6 @@ import platform
 import shutil
 import traceback
 from pathlib import Path
-
-from tensorrt_libs import DEPENDENCY_PATHS
 
 import downloader
 import settings
@@ -396,7 +394,8 @@ class OCRMonitorPlugin(Plugins.Base):
         self.canvas.tag_bind("confirm_button", '<Leave>', on_confirm_leave)
 
     def update_confirm_button_position(self):
-        """Position the confirm button inside the lower right of the selection"""
+        """Position the confirm button outside the rectangle on the right-bottom side.
+        If that would go off-screen, place it inside the rectangle instead."""
         if not self.selection_rect or not self.confirm_button:
             return
 
@@ -406,17 +405,32 @@ class OCRMonitorPlugin(Plugins.Base):
         button_height = 30
         padding = 10
 
-        # Position inside the lower right of selection, with padding from edges
-        button_x = max(x1, x2) - button_width - padding
-        button_y = max(y1, y2) - button_height - padding
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
 
-        # Ensure button doesn't go outside the selection area
-        if button_x < min(x1, x2) + padding:
-            button_x = min(x1, x2) + padding
-        if button_y < min(y1, y2) + padding:
-            button_y = min(y1, y2) + padding
+        # Default position: outside to the right, aligned with bottom
+        button_x = max(x1, x2) + padding
+        button_y = max(y1, y2) - button_height
 
-        # Update button position
+        # Check if outside position would go off-screen
+        outside_right = button_x + button_width > screen_w
+        outside_bottom = button_y + button_height > screen_h
+        outside_top = button_y < 0
+        outside_left = button_x < 0
+
+        # If any part would be off-screen, move it inside the rectangle
+        if outside_right or outside_bottom or outside_top or outside_left:
+            # Place it inside the rectangle (bottom-right corner)
+            button_x = max(x1, x2) - button_width - padding
+            button_y = max(y1, y2) - button_height - padding
+
+            # Clamp inside rectangle in case it’s too small
+            if button_x < min(x1, x2) + padding:
+                button_x = min(x1, x2) + padding
+            if button_y < min(y1, y2) + padding:
+                button_y = min(y1, y2) + padding
+
+        # Apply new coordinates
         self.canvas.coords(
             self.confirm_button,
             button_x, button_y,
@@ -425,8 +439,9 @@ class OCRMonitorPlugin(Plugins.Base):
 
         self.canvas.coords(
             self.confirm_text,
-            button_x + button_width//2, button_y + button_height//2
+            button_x + button_width // 2, button_y + button_height // 2
         )
+
 
     def load_existing_region(self):
         """Load and display existing region selection if available"""
@@ -532,14 +547,24 @@ class OCRMonitorPlugin(Plugins.Base):
     def init(self):
         os.makedirs(self.plugin_dir, exist_ok=True)
 
-        text_translation_languages = []
-        default_language = settings.SETTINGS.GetOption("trg_lang")
+        # get text translation languages
+        source_text_translation_languages = []
+        target_text_translation_languages = []
         texttranslate_languages = texttranslate.GetInstalledLanguageNames()
         if texttranslate_languages is not None:
-            text_translation_languages = [lang['code'] for lang in texttranslate_languages]
-        source_text_translation_languages = list(text_translation_languages)
-        text_translation_languages.insert(0, "")
-        source_text_translation_languages.insert(0, "auto")
+            source_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
+            source_text_translation_languages.insert(0, ["Auto", "auto"])
+            target_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
+
+        # find default_language in target languages and get its name
+        default_language = settings.SETTINGS.GetOption("trg_lang")
+        if default_language in [lang['code'] for lang in texttranslate_languages]:
+            for lang in texttranslate_languages:
+                if lang['code'] == default_language:
+                    default_language = lang['name']
+                    break
+
+
         # prepare all possible plugin settings and their default values
         self.init_plugin_settings(
             {
@@ -575,8 +600,8 @@ class OCRMonitorPlugin(Plugins.Base):
 
                 # Translation settings
                 "text_translation_enabled": False,
-                "language_source": {"type": "select", "value": "auto", "values": source_text_translation_languages},
-                "language_target": {"type": "select", "value": default_language, "values": text_translation_languages},
+                "language_source": {"type": "select_completion", "value": "Auto", "values": source_text_translation_languages},
+                "language_target": {"type": "select_completion", "value": default_language, "values": target_text_translation_languages},
             },
             settings_groups={
                 "General": [
