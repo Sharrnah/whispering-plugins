@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.6
+# V1.1.7
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -54,10 +54,10 @@ def load_module(package_dir):
 
 
 elevenlabs_dependency_module = {
-    "url": "https://files.pythonhosted.org/packages/48/43/77c7266f50b2e2eca5b155f15a35ef2a30cbd377d02a7f3ca32c077cb072/elevenlabs-1.50.3-py3-none-any.whl",
-    "sha256": "13622d27f5ccd4c8bc793abbc252d43cdddc261805f378ae9a032a6458687589",
+    "url": "https://files.pythonhosted.org/packages/45/a9/f98999d95b3b0b0cb6ac7f03d9f2b424a2d5892a361a55079d6801c9cf21/elevenlabs-2.16.0-py3-none-any.whl",
+    "sha256": "ba46cb8029c11f3fff5c8e083f5857a90adf0aa463bbd4cf01f5511017940d58",
     "path": "elevenlabs",
-    "version": "1.50.3"
+    "version": "2.16.0"
 }
 httpx_dependency_module = {
     "url": "https://files.pythonhosted.org/packages/41/7b/ddacf6dcebb42466abd03f368782142baa82e08fc0c1f8eaa05b4bae87d5/httpx-0.27.0-py3-none-any.whl",
@@ -245,7 +245,6 @@ class ElevenlabsTTSPlugin(Plugins.Base):
     def _login(self):
         print("Logging in to Elevenlabs...")
         api_key = self.get_plugin_setting("api_key")
-        #os.environ["ELEVEN_API_KEY"] = api_key
         if api_key is None or api_key == "":
             print("No API key set or login failed")
             return
@@ -321,20 +320,28 @@ class ElevenlabsTTSPlugin(Plugins.Base):
                 if style is not None and float(style) > -0.01:
                     settings_style = float(style)
 
+                # make sure stability is either 0.0, 0.5 or 1.0 for model eleven_v3
+                if model_id == "eleven_v3":
+                    if settings_stability < 0.25:
+                        settings_stability = 0.0
+                    elif 0.25 <= settings_stability < 0.75:
+                        settings_stability = 0.5
+                    else:
+                        settings_stability = 1.0
+
                 voice_settings = self.elevenlabslib.VoiceSettings(
                     stability=settings_stability, similarity_boost=settings_similarity_boost, style=settings_style, use_speaker_boost=True
                 )
             else:
                 voice_settings = selected_voice.settings
 
-            audio_data = self.client.generate(text=text.strip(),
-                                              voice=self.elevenlabslib.Voice(
-                                                  voice_id=selected_voice.voice_id,
-                                                  settings=voice_settings
-                                              ),
-                                              output_format="mp3_44100_128",
-                                              model=model_id,
-                                              )
+            audio_data = self.client.text_to_speech.convert(
+                text=text.strip(),
+                voice_id=selected_voice.voice_id,
+                voice_settings=voice_settings,
+                model_id=model_id,
+                output_format="mp3_44100_128",
+            )
 
             if isinstance(audio_data, Iterator):
                 audio_data = b"".join(audio_data)
@@ -395,22 +402,34 @@ class ElevenlabsTTSPlugin(Plugins.Base):
                 if style is not None and float(style) > -0.01:
                     settings_style = float(style)
 
+                # make sure stability is either 0.0, 0.5 or 1.0 for model eleven_v3
+                if model_id == "eleven_v3":
+                    if settings_stability < 0.25:
+                        settings_stability = 0.0
+                    elif 0.25 <= settings_stability < 0.75:
+                        settings_stability = 0.5
+                    else:
+                        settings_stability = 1.0
+
                 voice_settings = self.elevenlabslib.VoiceSettings(
                     stability=settings_stability, similarity_boost=settings_similarity_boost, style=settings_style, use_speaker_boost=True
                 )
             else:
                 voice_settings = selected_voice.settings
 
-            audio_data_stream = self.client.generate(text=text.strip(),
-                                                     voice=self.elevenlabslib.Voice(
-                                                         voice_id=selected_voice.voice_id,
-                                                         settings=voice_settings
-                                                     ),
-                                                     model=model_id,
-                                                     output_format="pcm_24000",
-                                                     stream=True,
-                                                     optimize_streaming_latency=optimize_streaming_latency,
-                                                     )
+            generate_kwargs = dict(
+                text=text.strip(),
+                voice_id=selected_voice.voice_id,
+                voice_settings=voice_settings,
+                model_id=model_id,
+                output_format="pcm_24000",
+            )
+            if model_id != "eleven_v3":
+                generate_kwargs["optimize_streaming_latency"] = optimize_streaming_latency
+
+            audio_data_stream = self.client.text_to_speech.stream(**generate_kwargs)
+
+
             full_audio_data = b""
             # Iterate over the audio chunks
             for chunk in audio_data_stream:
