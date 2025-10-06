@@ -1,6 +1,6 @@
 # ============================================================
 # OCR Monitor plugin for Whispering Tiger
-# Version: 0.0.3
+# Version: 0.0.4
 # This will monitor a region of the screen for text and send it to Whispering Tiger for processing.
 # ============================================================
 import json
@@ -10,6 +10,7 @@ import shutil
 import traceback
 from pathlib import Path
 
+import VRC_OSCLib
 import downloader
 import settings
 import websocket
@@ -574,6 +575,7 @@ class OCRMonitorPlugin(Plugins.Base):
                 "tts_enabled": False,
                 "show_selector": {"type": "button", "style": "button", "label": "Select Region"},
                 "ocr_btn": {"type": "button", "style": "button", "label": "OCR Test"},
+                "osc_enabled": False,
 
                 # tesseract settings
                 "use_tesseract": False,
@@ -591,6 +593,7 @@ class OCRMonitorPlugin(Plugins.Base):
                 "stability_time": 0,
                 "levenshtein_threshold": 5,
                 "levenshtein_word_threshold": 1,
+                "ignore_list": "...\n",
 
                 # Region settings
                 "region_x": 100,
@@ -611,10 +614,10 @@ class OCRMonitorPlugin(Plugins.Base):
                     "use_tesseract", "tesseract_language", "tesseract_update_btn"
                 ],
                 "Display": [
-                    "subtitle_enabled", "subtitle_zz_info"
+                    "subtitle_enabled", "osc_enabled", "subtitle_zz_info"
                 ],
                 "Stability": [
-                    ["levenshtein_threshold", "stability_time"],
+                    ["levenshtein_threshold", "stability_time", "ignore_list"],
                     ["levenshtein_word_threshold"],
                 ],
                 "Region": [
@@ -622,8 +625,8 @@ class OCRMonitorPlugin(Plugins.Base):
                     ["region_y", "region_height"],
                 ],
                 "Translation": [
-                    ["language_target", "text_translation_enabled"],
-                    ["language_source"],
+                    ["language_source", "text_translation_enabled"],
+                    ["language_target"],
                 ]
             }
         )
@@ -648,7 +651,17 @@ class OCRMonitorPlugin(Plugins.Base):
                 image = self.get_image_from_region()
                 if image is not None:
                     result_text = self.run_ocr(image)
-                    if result_text:
+                    # check ignore list (case-insensitive)
+                    ignore_list = self.get_plugin_setting("ignore_list", "")
+                    is_in_ignore = False
+                    result_text_lower = result_text.lower()
+                    for ignore_item in ignore_list.splitlines():
+                        ignore_item = ignore_item.strip()
+                        if ignore_item and ignore_item.lower() in result_text_lower:
+                            is_in_ignore = True
+                            break
+
+                    if not is_in_ignore and result_text:
                         self.handle_text(result_text)
 
     def setup_ocr_thread(self):
@@ -857,6 +870,21 @@ class OCRMonitorPlugin(Plugins.Base):
                         except Exception as e:
                             print(f"Plugin Subtitle failed in Plugin {plugin_inst.__class__.__name__}:", e)
                             traceback.print_exc()
+
+            if self.get_plugin_setting("osc_enabled"):
+                osc_ip = settings.SETTINGS.GetOption("osc_ip")
+                osc_port = settings.SETTINGS.GetOption("osc_port")
+                osc_address = settings.SETTINGS.GetOption("osc_address")
+                osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
+                osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
+                osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
+                osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
+
+                VRC_OSCLib.Chat_chunks(text,
+                                       nofify=False, address=osc_address, ip=osc_ip, port=osc_port,
+                                       chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                       initial_delay=osc_initial_time_limit,
+                                       convert_ascii=osc_convert_ascii)
 
             # send to ui via websocket
             result_obj = {
