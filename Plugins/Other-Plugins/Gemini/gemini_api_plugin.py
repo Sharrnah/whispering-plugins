@@ -1,6 +1,6 @@
 # ============================================================
 # Gemini API - Whispering Tiger Plugin (REST + Live WS streaming)
-# Version 0.0.1
+# Version 0.0.2
 # Docs (for reference):
 # - Generate Content:      https://ai.google.dev/api/generate-content
 # - Audio Understanding:   https://ai.google.dev/gemini-api/docs/audio
@@ -50,7 +50,10 @@ LLM_LANGUAGES = [
 
 # Gemini voice names (safe subset)
 TTS_VOICES = [
-    "Kore", "Puck", "Enceladus", "Zephyr", "Aoede", "Leda", "Orus", "Fenrir", "Charon"
+    "Kore", "Puck", "Enceladus", "Zephyr", "Aoede", "Leda", "Orus", "Fenrir", "Charon", "Callirrhoe", "Autonoe",
+    "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia",
+    "Achernar", "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi", "Vindemiatrix", "Sadachbia",
+    "Sadaltager", "Sulafat"
 ]
 
 # Text / multimodal models
@@ -66,7 +69,7 @@ LLM_MODELS = [
 GEMINI_TTS_MODELS = [
     "gemini-2.5-flash-preview-tts",        # REST TTS (full response)
     "gemini-2.5-pro-preview-tts",          # REST TTS (full response)
-    "gemini-live-2.5-flash-preview-native-audio",  # LIVE WS streaming (audio out)
+    #"gemini-live-2.5-flash-preview-native-audio",  # LIVE WS streaming (audio out)
 ]
 
 # Live WebSocket endpoint for Gemini
