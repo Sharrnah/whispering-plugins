@@ -79,7 +79,7 @@ The following structs are available:
 - `{"type": "select_completion", "value": "English", "values": [["English", "en"], ["French", "fr"], ["German", "de"]]}` - A Input field with autocompletion similar to the language fields in the main application. Each option is an array where the key is the displayed text to the user and the value is the value returned by `get_plugin_setting`.
 
 ## Custom Plugin events
-You can use event calls in plugins using `Plugins.plugin_custom_event_call(event_name, data_obj)`. This will give the result from the first Plugin with that event function.
+You can use event calls in plugins using `Plugins.plugin_custom_event_call(event_name, data_obj)`. This will give the result from the first Plugin with that event function and that does not return None.
 
 To get the results of all Plugins with that event function, use `Plugins.plugin_custom_event_call_all(event_name, data_obj)` which will return a list of all results you can iterate over.
 
