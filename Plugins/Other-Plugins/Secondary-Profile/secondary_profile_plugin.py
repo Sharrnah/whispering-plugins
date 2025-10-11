@@ -1,6 +1,6 @@
 # ============================================================
 # Load and use a second profile settings file for processing audio using Whispering Tiger
-# Version 1.0.3
+# Version 1.0.4
 #
 # See https://github.com/Sharrnah/whispering
 # ============================================================
@@ -461,8 +461,11 @@ class SecondaryProfilePlugin(Plugins.Base):
         if not predicted_text.lower() in audioprocessor.ignore_list:
             # translate using text translator if enabled
             # translate text realtime or after audio is finished
-            if do_txt_translate and self.settings.GetOption("txt_translate_realtime") or \
-                    do_txt_translate and not self.settings.GetOption("txt_translate_realtime") and final_audio:
+            realtime_translate = (
+                    self.settings.GetOption("txt_translate_realtime")
+                    or (self.settings.GetOption("txt_translate_realtime_sync") and self.settings.GetOption("realtime"))
+            )
+            if do_txt_translate and (realtime_translate or final_audio):
                 from_lang = self.settings.GetOption("src_lang")
                 to_lang = self.settings.GetOption("trg_lang")
                 to_romaji = self.settings.GetOption("txt_romaji")
