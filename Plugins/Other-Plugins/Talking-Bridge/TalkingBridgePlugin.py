@@ -1,6 +1,6 @@
 # ============================================================
 # Talking Bridge Plugin for Whispering Tiger
-# V0.0.8
+# V0.0.9
 # See https://github.com/Sharrnah/whispering-ui
 # Translates dynamically speech between languages
 # ============================================================
@@ -53,7 +53,7 @@ class TalkingBridgePlugin(Plugins.Base):
             #source_text_translation_languages.insert(0, ["Auto", "auto"])
             target_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
 
-        voices_list = []
+        voices_list = [""]
         if self.is_enabled(False):
             settings.SETTINGS.SetOption("osc_auto_processing_enabled", False)
             settings.SETTINGS.SetOption("osc_force_activity_indication", True)
@@ -79,7 +79,7 @@ class TalkingBridgePlugin(Plugins.Base):
                 "second_target_voice": {"type": "select", "value": "", "values": voices_list},
                 "advert_active": False,
                 "advert_inactivity_time": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 100},
-                "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 0},
+                "advert_frequency": {"type": "slider", "min": 0, "max": 300, "step": 1, "value": 50},
                 "advert_text": {"type": "textarea", "rows": 6, "value": "I auto translate between Japanese and English.\n\nStay close and speak.\nWait for translation to finish before speaking again.\n\n🐅 Whispering Tiger\nhttps://whispering-tiger.github.io/"},
                 "advert_text_2": {"type": "textarea", "rows": 6, "value": "私は日本語と英語のあいだを自動翻訳します。\n\n近くにいて、話しかけて。\n翻訳が終わるまで話さずにお待ちください。\n\n🐅 Whispering Tiger\nhttps://whispering-tiger.github.io/"},
                 "advert_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
@@ -94,7 +94,7 @@ class TalkingBridgePlugin(Plugins.Base):
                 "fallback_audio": {"type": "file_open", "accept": ".wav,.mp3", "value": ""},
                 "fallback_text": {"type": "textarea", "rows": 3, "value": "Sorry, i only speak English and Japanese"},
                 "advert_info": {"type": "label", "label": "", "style": "left"},
-                "language_probability_threshold": {"type": "slider", "min": 0, "max": 1, "step": 0.1, "value": 0.5},
+                "language_probability_threshold": {"type": "slider", "min": 0, "max": 1, "step": 0.1, "value": 0.2},
             },
             settings_groups={
                 "General": ["osc_enabled", "tts_enabled", "translation_enabled"],

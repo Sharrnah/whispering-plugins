@@ -91,6 +91,7 @@ class GeminiAPIPlugin(Plugins.Base):
         self.init_plugin_settings(
             {
                 "api_key": {"type": "textfield", "value": "", "password": True},
+                "refresh_settings_btn": {"label": "Refresh Settings", "type": "button", "style": "primary"},
 
                 # Translate Text
                 "translate_enabled": False,
@@ -110,13 +111,12 @@ class GeminiAPIPlugin(Plugins.Base):
                 "tts_enabled": False,
                 "tts_api_endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
                 "tts_model": {"type": "select", "value": GEMINI_TTS_MODELS[0], "values": GEMINI_TTS_MODELS},
-                "tts_voice": {"type": "select", "value": TTS_VOICES[0], "values": TTS_VOICES},
+                #"tts_voice": {"type": "select", "value": TTS_VOICES[0], "values": TTS_VOICES},
                 "tts_speed": {"type": "slider", "min": 0.25, "max": 4.0, "step": 0.01, "value": 1.0},
                 "tts_instructions": "",
                 "stt_min_words": -1,
                 "stt_max_words": -1,
                 "stt_max_char_length": -1,
-                "streamed_playback": False,  # when True -> Live WS; when False -> REST one-shot
 
                 # Chat
                 "chat_api_endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
@@ -134,12 +134,12 @@ class GeminiAPIPlugin(Plugins.Base):
                 "api_key_text_to_speech_overwrite": {"type": "textfield", "value": "", "password": True},
             },
             settings_groups={
-                "General": ["api_key", "translate_enabled", "transcribe_audio_enabled", "tts_enabled"],
+                "General": ["api_key", "translate_enabled", "transcribe_audio_enabled", "tts_enabled", "refresh_settings_btn"],
                 "Translate Text": ["translate_api_endpoint", "translate_model", "translate_temperature",
                                    "translate_max_tokens", "translate_top_p"],
                 "Speech-to-Text": ["audio_transcribe_api_endpoint", "audio_translate_api_endpoint", "audio_model"],
-                "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_voice", "tts_speed", "tts_instructions",
-                                   "stt_min_words", "stt_max_words", "stt_max_char_length", "streamed_playback"],
+                "Text-to-Speech": ["tts_api_endpoint", "tts_model", "tts_speed", "tts_instructions",
+                                   "stt_min_words", "stt_max_words", "stt_max_char_length"],
                 "Chat": ["chat_api_endpoint", "chat_model", "chat_message", "chat_system_prompt", "chat_temperature",
                          "chat_max_tokens", "chat_top_p", "chat_message_send_btn"],
                 "Advanced": ["api_key_translate_overwrite", "api_key_speech_to_text_overwrite",
@@ -148,15 +148,22 @@ class GeminiAPIPlugin(Plugins.Base):
         )
 
         if self.is_enabled(False):
-            if self.get_plugin_setting("translate_enabled"):
-                settings.SetOption("txt_translator", "")
-                websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_translation_languages()}))
-            if self.get_plugin_setting("transcribe_audio_enabled"):
-                settings.SetOption("stt_type", "")
-                settings.SetOption("whisper_languages", self.whisper_get_languages())
-                websocket.BroadcastMessage(json.dumps({"type": "translate_settings", "data": settings.SETTINGS.get_all_settings()}))
-            if self.get_plugin_setting("tts_type") != "":
-                settings.SetOption("tts_type", "")
+            self.update_settings()
+
+    def update_settings(self):
+        if self.get_plugin_setting("translate_enabled"):
+            settings.SetOption("txt_translator", "")
+            websocket.BroadcastMessage(json.dumps({"type": "installed_languages", "data": self.return_translation_languages()}))
+        if self.get_plugin_setting("transcribe_audio_enabled"):
+            settings.SetOption("stt_type", "")
+            settings.SetOption("whisper_languages", self.whisper_get_languages())
+            websocket.BroadcastMessage(json.dumps({"type": "translate_settings", "data": settings.SETTINGS.get_all_settings()}))
+        if self.get_plugin_setting("tts_type") != "":
+            settings.SetOption("tts_type", "")
+            websocket.BroadcastMessage(json.dumps({
+                "type": "available_tts_voices",
+                "data": TTS_VOICES
+            }))
 
     def whisper_get_languages(self):
         languages = {"": "Auto", **LANGUAGES}
@@ -338,7 +345,7 @@ class GeminiAPIPlugin(Plugins.Base):
         api_key = self.get_plugin_setting("api_key")
         if self.get_plugin_setting("api_key_text_to_speech_overwrite") != "":
             api_key = self.get_plugin_setting("api_key_text_to_speech_overwrite")
-        tts_voice = self.get_plugin_setting("tts_voice")
+        tts_voice = settings.GetOption("tts_voice")
         tts_speed = self.get_plugin_setting("tts_speed")
         tts_instructions = self.get_plugin_setting("tts_instructions")
 
@@ -412,7 +419,7 @@ class GeminiAPIPlugin(Plugins.Base):
             api_key = self.get_plugin_setting("api_key_text_to_speech_overwrite")
 
         tts_model = self.get_plugin_setting("tts_model")
-        tts_voice = self.get_plugin_setting("tts_voice")
+        tts_voice = settings.GetOption("tts_voice")
         tts_speed = float(self.get_plugin_setting("tts_speed"))
         tts_instructions = self.get_plugin_setting("tts_instructions")
 
@@ -658,7 +665,7 @@ class GeminiAPIPlugin(Plugins.Base):
                 audio_device = settings.GetOption("device_default_out_index")
 
             if self.word_char_count_allowed(text.strip()):
-                if self.get_plugin_setting("streamed_playback"):
+                if settings.GetOption("tts_streamed_playback"):
                     asyncio.run(self._tts_api_streamed_async(text.strip()))
                 else:
                     wav = self._tts_api(text.strip())
@@ -678,7 +685,7 @@ class GeminiAPIPlugin(Plugins.Base):
             if device_index is None or device_index == -1:
                 device_index = settings.GetOption("device_default_out_index")
 
-            if self.get_plugin_setting("streamed_playback") and not download:
+            if settings.GetOption("tts_streamed_playback") and not download:
                 # true streaming path; playback happens inside the streamer loop
                 asyncio.run(self._tts_api_streamed_async(text.strip()))
             else:
@@ -758,6 +765,9 @@ class GeminiAPIPlugin(Plugins.Base):
         if message["type"] == "plugin_button_press":
             if message["value"] == "chat_message_send_btn":
                 self.chat_message_process()
+
+        if message["type"] == "refresh_settings_btn":
+            self.update_settings()
         pass
 
 
