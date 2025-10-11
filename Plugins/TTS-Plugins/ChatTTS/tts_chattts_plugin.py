@@ -1,6 +1,6 @@
 # ============================================================
 # ChatTTS Text to Speech Plugin for Whispering Tiger
-# V0.0.9
+# V0.1.1
 # ChatTTS: https://github.com/2noise/ChatTTS
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -63,7 +63,7 @@ os.makedirs(plugin_dir, exist_ok=True)
 
 chattts_dependency_module = {
     "url": "https://github.com/Sharrnah/ChatTTS/archive/refs/heads/0.1.1_fix-eng-chars.zip",
-    "sha256": "ae5fac2f93c28be3e683ff6a08add7db63efb28752218d1d12521b1fb3d59d72",
+    "sha256": "d0e8a2b5af4ef92d16dbd70a20a7d577778ba586e2040bf0db89b1e5b57dba47",
     "path": "ChatTTS-0.1.1_fix-eng-chars/ChatTTS",
 }
 chattts_models = {
@@ -93,6 +93,19 @@ vocos_dependency_module = {
     "url": "https://files.pythonhosted.org/packages/98/b3/445694d1059688a76a997c61936fef938b7d90f905a00754b4a441e7fcbd/vocos-0.0.3-py3-none-any.whl",
     "sha256": "0578b20b4ba57533a9d9b3e5ec3f81982f6fabd07ef02eb175fa9ee5da1e3cac",
     "path": "vocos"
+}
+
+vocos_model = {
+    "urls": [
+        "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:ai-models/chat-tts/vocos-encodec-24khz.zip",
+        "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:ai-models/chat-tts/vocos-encodec-24khz.zip",
+    ],
+    "file_checksums": {
+        "config.yaml": "43b8b45282e8eeb424e29937badf7b92743dfb68b78299fcbbf64c880f971cb2",
+        "pytorch_model.bin": "7e95bb260b74a1bfc43c52d355831c951acb81c8960e9c62b79bd2b3ab1e3a90"
+    },
+    "sha256": "243a9191176be9a5e6beb04dfa03ba5a92a00127f4370b03f7e12e6d308c0ea8",
+    "path": "vocos-encodec-24khz",
 }
 
 vector_quantize_pytorch_dependency_module = {
@@ -277,6 +290,7 @@ class ChatTTSPlugin(Plugins.Base):
     def _load_vocos_model(self):
         # load the vocos module (optional vocoder)
         if self.get_plugin_setting("use_vocos", True) and self.vocos is None:
+            vocos_module_path = str(Path(plugin_dir / vocos_dependency_module["path"]).resolve())
             if not Path(plugin_dir / vocos_dependency_module["path"] / "__init__.py").is_file():
                 downloader.download_extract([vocos_dependency_module["url"]],
                                             str(plugin_dir.resolve()),
@@ -288,9 +302,43 @@ class ChatTTSPlugin(Plugins.Base):
                                                 str(plugin_dir.resolve()),
                                             ),
                                             title="ChatTTS - vocos module", extract_format="zip")
-            vocos_module = load_module(str(Path(plugin_dir / vocos_dependency_module["path"]).resolve()))
+            vocos_module = load_module(vocos_module_path)
             device = self._get_infer_device()
-            self.vocos = vocos_module.Vocos.from_pretrained("charactr/vocos-encodec-24khz").to(device)
+
+            # load vocos model
+            model_path = Path(plugin_dir / vocos_model["path"])
+            if not downloader.check_file_hashes(str(model_path.resolve()), vocos_model["file_checksums"]):
+                downloader.download_extract(vocos_model["urls"],
+                                            str(model_path.resolve()),
+                                            vocos_model["sha256"],
+                                            alt_fallback=True,
+                                            fallback_extract_func=downloader.extract_zip,
+                                            fallback_extract_func_args=(
+                                                str(model_path / os.path.basename(
+                                                    vocos_model["urls"][0])),
+                                                str(model_path.resolve()),
+                                            ),
+                                            title="ChatTTS - Vocos Model", extract_format="zip")
+
+            #self.vocos = vocos_module.Vocos.from_pretrained(str(model_path.resolve())).to(device)
+            config_file = str(model_path / "config.yaml")
+            model_file = str(model_path / "pytorch_model.bin")
+            model = vocos_module.Vocos.from_hparams(config_file)
+            state_dict = torch.load(model_file, map_location="cpu")
+
+            # import vocos module to access EncodecFeatures
+            sys.path.insert(0, vocos_module_path)
+            from vocos.feature_extractors import EncodecFeatures
+
+            if isinstance(model.feature_extractor, EncodecFeatures):
+                encodec_parameters = {
+                    "feature_extractor.encodec." + key: value
+                    for key, value in model.feature_extractor.encodec.state_dict().items()
+                }
+                state_dict.update(encodec_parameters)
+            model.load_state_dict(state_dict)
+            model.eval()
+            self.vocos = model.to(device)
 
     def generate_tts(self, text, speaker=None) -> torch.Tensor | None:
         temperature = self.get_plugin_setting("temperature", .3)
