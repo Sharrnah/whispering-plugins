@@ -411,22 +411,22 @@ class TalkingBridgePlugin(Plugins.Base):
             if (text_lang != "" and text_lang == self.get_plugin_setting("first_source_language")) or speaker_lang == self.get_plugin_setting("first_speaker_language"):
                 source_lang = self.get_plugin_setting("first_source_language")
                 target_lang = self.get_plugin_setting("first_target_language")
-                target_voice = self.get_plugin_setting("first_target_voice")
+                target_voice = self.get_plugin_setting("first_target_voice") or settings.GetOption("tts_voice")
             elif (text_lang != "" and text_lang == self.get_plugin_setting("second_source_language")) or speaker_lang == self.get_plugin_setting("second_speaker_language"):
                 source_lang = self.get_plugin_setting("second_source_language")
                 target_lang = self.get_plugin_setting("second_target_language")
-                target_voice = self.get_plugin_setting("second_target_voice")
+                target_voice = self.get_plugin_setting("second_target_voice") or settings.GetOption("tts_voice")
             else:
                 fallback_action = self.get_plugin_setting("fallback_action")
                 match fallback_action:
                     case "ToFirst":
                         source_lang = "auto"
                         target_lang = self.get_plugin_setting("first_target_language")
-                        target_voice = self.get_plugin_setting("first_target_voice")
+                        target_voice = self.get_plugin_setting("first_target_voice") or settings.GetOption("tts_voice")
                     case "ToSecond":
                         source_lang = "auto"
                         target_lang = self.get_plugin_setting("second_target_language")
-                        target_voice = self.get_plugin_setting("second_target_voice")
+                        target_voice = self.get_plugin_setting("second_target_voice") or settings.GetOption("tts_voice")
                     case "playAudio":
                         fallback_audio = self.get_plugin_setting("fallback_audio")
                         fallback_text = self.get_plugin_setting("fallback_text")
