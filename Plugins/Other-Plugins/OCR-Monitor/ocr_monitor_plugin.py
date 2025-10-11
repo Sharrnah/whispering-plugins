@@ -1,6 +1,6 @@
 # ============================================================
 # OCR Monitor plugin for Whispering Tiger
-# Version: 0.0.4
+# Version: 0.0.5
 # This will monitor a region of the screen for text and send it to Whispering Tiger for processing.
 # ============================================================
 import json
@@ -551,19 +551,19 @@ class OCRMonitorPlugin(Plugins.Base):
         # get text translation languages
         source_text_translation_languages = []
         target_text_translation_languages = []
+        default_language = settings.SETTINGS.GetOption("trg_lang")
         texttranslate_languages = texttranslate.GetInstalledLanguageNames()
         if texttranslate_languages is not None:
             source_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
             source_text_translation_languages.insert(0, ["Auto", "auto"])
             target_text_translation_languages = [[lang['name'], lang['code']] for lang in texttranslate_languages]
 
-        # find default_language in target languages and get its name
-        default_language = settings.SETTINGS.GetOption("trg_lang")
-        if default_language in [lang['code'] for lang in texttranslate_languages]:
-            for lang in texttranslate_languages:
-                if lang['code'] == default_language:
-                    default_language = lang['name']
-                    break
+            # find default_language in target languages and get its name
+            if default_language in [lang['code'] for lang in texttranslate_languages]:
+                for lang in texttranslate_languages:
+                    if lang['code'] == default_language:
+                        default_language = lang['name']
+                        break
 
 
         # prepare all possible plugin settings and their default values
