@@ -766,8 +766,8 @@ class GeminiAPIPlugin(Plugins.Base):
             if message["value"] == "chat_message_send_btn":
                 self.chat_message_process()
 
-        if message["type"] == "refresh_settings_btn":
-            self.update_settings()
+            if message["value"] == "refresh_settings_btn":
+                self.update_settings()
         pass
 
 
