@@ -69,6 +69,7 @@ class TalkingBridgePlugin(Plugins.Base):
                 "osc_enabled": False,
                 "tts_enabled": False,
                 "translation_enabled": False,
+                "delay_osc_until_tts_playback": False,
                 "first_speaker_language": {"type": "select_completion", "value": "", "values": whisper_languages_list},
                 "first_source_language": {"type": "select_completion", "value": "", "values": source_text_translation_languages},
                 "first_target_language": {"type": "select_completion", "value": "", "values": target_text_translation_languages},
@@ -97,7 +98,7 @@ class TalkingBridgePlugin(Plugins.Base):
                 "language_probability_threshold": {"type": "slider", "min": 0, "max": 1, "step": 0.1, "value": 0.2},
             },
             settings_groups={
-                "General": ["osc_enabled", "tts_enabled", "translation_enabled"],
+                "General": ["osc_enabled", "tts_enabled", "translation_enabled", "delay_osc_until_tts_playback"],
                 "Languages": [
                     ["first_speaker_language", "second_speaker_language", "first_target_voice"],
                     ["first_source_language", "second_source_language", "second_target_voice"],
@@ -368,6 +369,34 @@ class TalkingBridgePlugin(Plugins.Base):
                         traceback.print_exc()
         pass
 
+    def _osc_playback(self, translation_text):
+        osc_ip = settings.SETTINGS.GetOption("osc_ip")
+        osc_port = settings.SETTINGS.GetOption("osc_port")
+        osc_address = settings.SETTINGS.GetOption("osc_address")
+        osc_chat_limit = settings.SETTINGS.GetOption("osc_chat_limit")
+        osc_time_limit = settings.SETTINGS.GetOption("osc_time_limit")
+        osc_initial_time_limit = settings.SETTINGS.GetOption("osc_initial_time_limit")
+        osc_convert_ascii = settings.SETTINGS.GetOption("osc_convert_ascii")
+
+        if not self.get_plugin_setting("delay_osc_until_tts_playback"):
+            VRC_OSCLib.Chat_chunks(translation_text,
+                                   nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
+                                   chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                   initial_delay=osc_initial_time_limit,
+                                   convert_ascii=osc_convert_ascii)
+        else:
+            # wait until is_audio_playing is True or timeout is reached
+            delay_timeout = time.time() + settings.GetOption("osc_delay_timeout")
+            tag = settings.GetOption("osc_delay_until_audio_playback_tag")
+            if tag == "tts":
+                while not audio_tools.is_audio_playing(tag=tag) and time.time() < delay_timeout:
+                    time.sleep(0.05)
+            VRC_OSCLib.Chat_chunks(translation_text,
+                                   nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
+                                   chunk_size=osc_chat_limit, delay=osc_time_limit,
+                                   initial_delay=osc_initial_time_limit,
+                                   convert_ascii=osc_convert_ascii)
+
     def stt(self, text, result_obj):
         if self.is_enabled():
             osc_ip = settings.SETTINGS.GetOption("osc_ip")
@@ -449,17 +478,14 @@ class TalkingBridgePlugin(Plugins.Base):
                 translation_text, from_code, to_code = texttranslate.TranslateLanguage(text, source_lang, target_lang)
                 print("to_code:", to_code)
 
-            if self.get_plugin_setting("osc_enabled"):
 
-                VRC_OSCLib.Chat_chunks(translation_text,
-                                       nofify=True, address=osc_address, ip=osc_ip, port=osc_port,
-                                       chunk_size=osc_chat_limit, delay=osc_time_limit,
-                                       initial_delay=osc_initial_time_limit,
-                                       convert_ascii=osc_convert_ascii)
+            if self.get_plugin_setting("osc_enabled"):
+                threading.Thread(target=self._osc_playback, args=(translation_text,), daemon=True).start()
 
             if self.get_plugin_setting("tts_enabled"):
                 self.determine_tts_settings(to_code)
                 if target_voice != "":
                     settings.SETTINGS.SetOption("tts_voice", target_voice)
                 self.run_tts(translation_text, voice=target_voice)
+
         return
