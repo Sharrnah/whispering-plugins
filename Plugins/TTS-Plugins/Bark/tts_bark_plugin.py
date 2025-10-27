@@ -1,6 +1,6 @@
 # ============================================================
 # Bark Text to Speech Plugin for Whispering Tiger
-# V0.3.36
+# V0.3.37
 # Bark: https://github.com/suno-ai/bark
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -170,9 +170,9 @@ funcy_dependency_module = {
 }
 
 bark_dependency_module = {
-    "url": "https://github.com/Sharrnah/bark-with-voice-clone/archive/99f40108dcc6c68cbaa6a6a58a0510f714d6266c.zip",
-    "sha256": "f5e2f04306e576b00815927be4302e6833f25b6d9f38d42a295f20bdea663812",
-    "path": "bark-with-voice-clone-99f40108dcc6c68cbaa6a6a58a0510f714d6266c",
+    "url": "https://github.com/Sharrnah/bark-with-voice-clone/archive/f692b8fd0930cfdca6695024d030987b763e01c3.zip",
+    "sha256": "7d9627e7565729e7244559e218603dacdca94514987dea048dbd41c2646fc9f4",
+    "path": "bark-with-voice-clone-f692b8fd0930cfdca6695024d030987b763e01c3",
 }
 
 vocos_dependency_module = {
@@ -189,7 +189,14 @@ bark_voice_clone_tool = {
     "sha256": "a32afb7a2a9e4b706ecfeefb9a010e6e975096e7573ec8ab70fefbdfaabd4bd3",
     "path": "barkVoiceClone",
 }
-
+vocos_model_dependency = {
+    "urls": [
+        "https://eu2.contabostorage.com/bf1a89517e2643359087e5d8219c0c67:ai-models/chat-tts/vocos-encodec-24khz.zip",
+        "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:ai-models/chat-tts/vocos-encodec-24khz.zip",
+    ],
+    "sha256": "243a9191176be9a5e6beb04dfa03ba5a92a00127f4370b03f7e12e6d308c0ea8",
+    "path": "vocos-encodec-24khz",
+}
 
 class BarkTTSPlugin(Plugins.Base):
     bark_module = None
@@ -320,7 +327,30 @@ class BarkTTSPlugin(Plugins.Base):
                                             title="Bark - vocos module", extract_format="zip")
             vocos_module = load_module(str(Path(bark_plugin_dir / vocos_dependency_module["path"]).resolve()))
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.vocos = vocos_module.Vocos.from_pretrained("charactr/vocos-encodec-24khz").to(device)
+
+            # monkey patch vocos_module.Vocos and add from_local method
+            def from_local(cls, model_path: str) -> "vocos_module.Vocos":
+                """
+                Class method to create a new Vocos model instance from a local model checkpoint.
+                """
+                config_path = os.path.join(os.path.dirname(model_path), "config.yaml")
+                model = cls.from_hparams(config_path)
+                state_dict = torch.load(model_path, map_location="cpu")
+                from vocos.feature_extractors import EncodecFeatures
+                if isinstance(model.feature_extractor, EncodecFeatures):
+                    encodec_parameters = {
+                        "feature_extractor.encodec." + key: value
+                        for key, value in model.feature_extractor.encodec.state_dict().items()
+                    }
+                    state_dict.update(encodec_parameters)
+                model.load_state_dict(state_dict)
+                model.eval()
+                return model
+            vocos_module.Vocos.from_local = from_local
+
+            #self.vocos = vocos_module.Vocos.from_pretrained("charactr/vocos-encodec-24khz").to(device)
+            self.vocos = vocos_module.Vocos.from_local(vocos_module.Vocos, str(bark_plugin_dir / vocos_model_dependency["path"] / "pytorch_model.bin")).to(device)
+
 
     def _levenshtein_distance(self, s1, s2):
         if len(s1) > len(s2):
@@ -475,6 +505,9 @@ class BarkTTSPlugin(Plugins.Base):
         )
 
         if self.is_enabled(False):
+            # disable implicit token usage from huggingface hub
+            os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+
             model_cache_dir = Path(bark_plugin_dir / "bark_models")
 
             # disable default tts engine
@@ -524,6 +557,20 @@ class BarkTTSPlugin(Plugins.Base):
                                             ),
                                             title="Bark - einops module", extract_format="zip")
             einops = load_module(str(Path(bark_plugin_dir / einops_dependency_module["path"]).resolve()))
+
+            # load the vocos encodec model
+            encodec_model_path = Path(bark_plugin_dir / vocos_model_dependency["path"])
+            if not Path(encodec_model_path / "pytorch_model.bin").is_file():
+                downloader.download_extract(vocos_model_dependency["urls"],
+                                            str(Path(bark_plugin_dir / vocos_model_dependency["path"]).resolve()),
+                                            vocos_model_dependency["sha256"],
+                                            alt_fallback=True,
+                                            fallback_extract_func=downloader.extract_zip,
+                                            fallback_extract_func_args=(
+                                                str(bark_plugin_dir / os.path.basename(vocos_model_dependency["urls"][0])),
+                                                str(bark_plugin_dir.resolve()),
+                                            ),
+                                            title="Bark - vocos encodec model", extract_format="zip")
 
             # load the encodec module
             encodec_path = Path(bark_plugin_dir / encodec_dependency["path"])
