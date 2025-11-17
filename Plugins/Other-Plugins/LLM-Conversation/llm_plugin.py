@@ -180,7 +180,7 @@ class LlmPlugin(Plugins.Base):
                                                                           trust_remote_code=True,
                                                                           revision="float16",
                                                                           device_map=device_map, load_in_8bit=self.load_in_8bit_mode,
-                                                                          torch_dtype=torch.float16,
+                                                                          dtype=torch.float16,
                                                                           low_cpu_mem_usage=self.low_cpu_mem_usage)
                     case 8:  # 8 bit int
                         self.model = AutoModelForCausalLM.from_pretrained(self.model_name,

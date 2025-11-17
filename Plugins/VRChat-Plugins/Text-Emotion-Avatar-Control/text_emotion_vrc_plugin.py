@@ -89,7 +89,7 @@ class TextEmotionVrcPlugin(Plugins.Base):
 
                     self.model = pipeline("text-classification", model=self.model_name, top_k=None,
                                           device=self.device.lower(),
-                                          torch_dtype=precision)
+                                          dtype=precision)
                 except Exception as e:
                     websocket.BroadcastMessage(json.dumps({"type": "error", "data": str(e)}))
 
