@@ -370,7 +370,7 @@ class LlmPlugin(Plugins.Base):
             predicted_text = self.encode(text)
 
             # detect written text language
-            language = languageClassification.classify(text)
+            language, _ = languageClassification.classify(text)
 
             result_obj = {'text': text, 'type': "transcribe", 'language': language, 'llm_answer': predicted_text}
 
