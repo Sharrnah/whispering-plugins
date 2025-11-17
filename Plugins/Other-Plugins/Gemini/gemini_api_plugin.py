@@ -1,6 +1,6 @@
 # ============================================================
 # Gemini API - Whispering Tiger Plugin (REST + Live WS streaming)
-# Version 0.0.2
+# Version 0.0.3
 # Docs (for reference):
 # - Generate Content:      https://ai.google.dev/api/generate-content
 # - Audio Understanding:   https://ai.google.dev/gemini-api/docs/audio
@@ -160,9 +160,12 @@ class GeminiAPIPlugin(Plugins.Base):
             websocket.BroadcastMessage(json.dumps({"type": "translate_settings", "data": settings.SETTINGS.get_all_settings()}))
         if self.get_plugin_setting("tts_type") != "":
             settings.SetOption("tts_type", "")
+            voices_list = []
+            for speaker in TTS_VOICES:
+                voices_list.append({"name": speaker, "value": speaker})
             websocket.BroadcastMessage(json.dumps({
                 "type": "available_tts_voices",
-                "data": TTS_VOICES
+                "data": voices_list
             }))
 
     def whisper_get_languages(self):

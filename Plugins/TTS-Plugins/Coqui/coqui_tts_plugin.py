@@ -1,6 +1,6 @@
 # ============================================================
 # Coqui Text to Speech Plugin for Whispering Tiger
-# V1.1.10
+# V1.1.11
 # Coqui: https://github.com/coqui-ai/TTS/
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -396,9 +396,12 @@ class CoquiTTSPlugin(Plugins.Base):
                         speakers_list.extend(self.predefined_speakers)
                         self.multi_speaker = True
 
+                    voices_list = []
+                    for speaker in speakers_list:
+                        voices_list.append({"name": speaker, "value": speaker})
                     websocket.BroadcastMessage(json.dumps({
                         "type": "available_tts_voices",
-                        "data": speakers_list
+                        "data": voices_list
                     }), exclude_client=websocket_connection)
 
                 elif "languages" in message:

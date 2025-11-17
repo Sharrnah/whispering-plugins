@@ -1,6 +1,6 @@
 # ============================================================
 # Elevenlabs TTS plugin for Whispering Tiger
-# V1.1.7
+# V1.1.8
 #
 # See https://github.com/Sharrnah/whispering-ui
 # Uses the TTS engine from https://www.elevenlabs.com/
@@ -259,10 +259,12 @@ class ElevenlabsTTSPlugin(Plugins.Base):
         self.voices = voices_response.voices
 
         print("Logged in to Elevenlabs.")
-
+        voices_list = []
+        for speaker in self._get_speaker_names(self.voices):
+            voices_list.append({"name": speaker, "value": speaker})
         websocket.BroadcastMessage(json.dumps({
             "type": "available_tts_voices",
-            "data": self._get_speaker_names(self.voices)
+            "data": voices_list,
         }))
 
     def _get_speaker_names(self, speakers):

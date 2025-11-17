@@ -1,6 +1,6 @@
 # ============================================================
 # Voicevox Text to Speech Plugin for Whispering Tiger
-# V1.2.7
+# V1.2.8
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -364,9 +364,12 @@ class VoicevoxTTSPlugin(Plugins.Base):
 
         self.speakers = self.synthesizer.metas
 
+        voices_list = []
+        for speaker in self.get_style_names(self.speakers):
+            voices_list.append({"name": speaker, "value": speaker})
         websocket.BroadcastMessage(json.dumps({
             "type": "available_tts_voices",
-            "data": self.get_style_names(self.speakers)
+            "data": voices_list
         }))
 
     def apply_rvc(self, buff):
