@@ -1,6 +1,6 @@
 # ============================================================
 # Voicevox Text to Speech Plugin for Whispering Tiger
-# V1.2.8
+# V1.2.9
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 #
@@ -91,7 +91,9 @@ voicevox_models = {
 }
 
 open_jtalk_dict_file = {
-    "url": "https://jaist.dl.sourceforge.net/project/open-jtalk/Dictionary/open_jtalk_dic-1.11/open_jtalk_dic_utf_8-1.11.tar.gz",
+    # Changed to own hosting source since sourceforge link does return a 177 kb file.
+    #"url": "https://jaist.dl.sourceforge.net/project/open-jtalk/Dictionary/open_jtalk_dic-1.11/open_jtalk_dic_utf_8-1.11.tar.gz",
+    "url": "https://usc1.contabostorage.com/8fcf133c506f4e688c7ab9ad537b5c18:ai-models/voicevox/open_jtalk_dic_utf_8-1.11.tar.gz",
     "sha256": "33e9cd251bc41aa2bd7ca36f57abbf61eae3543ca25ca892ae345e394cb10549",
     "path": "open_jtalk_dic_utf_8-1.11",
     "version": "1.11"
