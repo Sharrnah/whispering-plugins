@@ -1,6 +1,6 @@
 # ============================================================
 # Shows currently playing Song over OSC using Whispering Tiger
-# Version 1.0.8
+# Version 1.0.9
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 import datetime
@@ -38,6 +38,7 @@ class CurrentPlayingPlugin(Plugins.Base):
                 "commands": None,
                 "players": None,
                 "only_playing": False,
+                "debug": False,
                 # progression UI settings
                 "display_title": True,
                 "display_title_album": True,
@@ -52,7 +53,7 @@ class CurrentPlayingPlugin(Plugins.Base):
                 "progress_bar_pos_character": "🐅",
             },
             settings_groups={
-                "General": ["timer", "commands", "players", "only_playing"],
+                "General": ["timer", "commands", "players", "only_playing", "debug"],
                 "Progression": ["display_title", "display_title_album", "display_progressbar", "display_time_progress", "display_progress_percentage", "display_lyrics", "display_lyrics_lines", "progress_bar_length", "progress_bar_pos_character", "progress_lyrics_character", "progress_lyrics_next_character"],
             }
         )
@@ -123,9 +124,14 @@ class CurrentPlayingPlugin(Plugins.Base):
         player_names = self.get_plugin_setting("players")
         if player_names is None:
             player_names = PLAYERS
+        elif isinstance(player_names, str):
+            player_names = [p.strip() for p in player_names.split(",") if p.strip()]
 
         # check if player name is in source_app_user_model_id
         for player_name in player_names:
+            debug = self.get_plugin_setting("debug")
+            if debug:
+                    print(f"Checking player: {source_app_user_model_id}")
             if player_name.lower() in source_app_user_model_id.lower():
                 return True
         return False
@@ -199,6 +205,14 @@ class CurrentPlayingPlugin(Plugins.Base):
                 timeline_properties = session.get_timeline_properties()
                 playback_position = timeline_properties.position
                 total_duration = timeline_properties.end_time - timeline_properties.start_time
+                # calculate actual position based on elapsed time since last update
+                if status.playback_status.name == 'PLAYING':
+                    last_updated = timeline_properties.last_updated_time
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    elapsed = now - last_updated
+                    playback_position = playback_position + elapsed
+                    if total_duration > datetime.timedelta(0) and playback_position > total_duration:
+                        playback_position = total_duration
                 if total_duration > datetime.timedelta(0):
                     progress_percentage = (playback_position / total_duration) * 100
                 else:
