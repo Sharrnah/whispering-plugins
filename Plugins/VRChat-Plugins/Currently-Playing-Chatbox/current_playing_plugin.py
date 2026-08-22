@@ -1,6 +1,6 @@
 # ============================================================
 # Shows currently playing Song over OSC using Whispering Tiger
-# Version 1.0.9
+# Version 1.0.10
 # See https://github.com/Sharrnah/whispering
 # ============================================================
 import datetime
@@ -19,7 +19,7 @@ PROMPT = {
     "command": ["playing", "listening", "listens", "song", "music", "track", "current"]
 }
 
-PLAYERS = ["Spotify", "iTunes", "AmazonMusic", "Deezer", "YouTubeMusic", "WindowsMediaPlayer", "Groove", "Music", "Zune", "Winamp", "AIMP", "foobar2000", "Spotube"]
+PLAYERS = ["Spotify", "iTunes", "AmazonMusic", "Deezer", "YouTubeMusic", "WindowsMediaPlayer", "Groove", "Music", "Zune", "Winamp", "AIMP", "foobar2000", "Spotube", "com.squirrel.TIDAL.TIDAL"]
 
 
 class CurrentPlayingPlugin(Plugins.Base):
@@ -69,19 +69,26 @@ class CurrentPlayingPlugin(Plugins.Base):
 
         if response.status_code == 200:
             print("lyrics fetched.")
-            lyrics_data = response.json()
-            self.lyrics = self.parse_synced_lyrics(lyrics_data.get("syncedLyrics", ""))
+            try:
+                lyrics_data = response.json()
+                self.lyrics = self.parse_synced_lyrics(lyrics_data.get("syncedLyrics"))
+            except Exception:
+                print("Failed to parse synced lyrics.")
+                self.lyrics = None
         else:
             print("lyrics fetch failed. Trying again.")
             self.lyrics = None
-            params = params.pop("album_name") # try again without album name
-            response = requests.get(api_url, params=params)
+            retry_params = {
+                "track_name": track_name,
+                "artist_name": artist_name,
+            }  # try again without album name
+            response = requests.get(api_url, params=retry_params)
             if response.status_code == 200:
                 print("lyrics fetched.")
                 try:
                     lyrics_data = response.json()
-                    self.lyrics = self.parse_synced_lyrics(lyrics_data.get("syncedLyrics", ""))
-                except Exception as e:
+                    self.lyrics = self.parse_synced_lyrics(lyrics_data.get("syncedLyrics"))
+                except Exception:
                     print("Failed to parse synced lyrics.")
                     self.lyrics = None
             else:
@@ -89,6 +96,9 @@ class CurrentPlayingPlugin(Plugins.Base):
                 self.lyrics = None
 
     def parse_synced_lyrics(self, synced_lyrics):
+        if not synced_lyrics:
+            return None
+
         lyrics = []
         for line in synced_lyrics.split("\n"):
             if line.strip():
@@ -97,9 +107,12 @@ class CurrentPlayingPlugin(Plugins.Base):
                     minutes, seconds = map(float, time_str[1:].split(":"))
                     start_time = minutes * 60 + seconds
                     lyrics.append({"start_time": start_time, "text": text})
-        return lyrics
+        return lyrics if lyrics else None
 
     def get_current_lyrics_line(self, current_time, future_lines=1, current_line_char="●", next_line_char="○"):
+        if not self.lyrics:
+            return ""
+
         lyrics_output = []
         for i, line in enumerate(self.lyrics):
             if i + 1 < len(self.lyrics):
@@ -230,7 +243,10 @@ class CurrentPlayingPlugin(Plugins.Base):
                     progress_bar_string = f"\n{int(progress_percentage)}%"
 
                 if only_playing and status.playback_status.name == 'PLAYING' or not only_playing:
-                    if display_lyrics and (self.current_song.get("title") == "" or self.current_song.get("title") != info.title) and (self.current_song.get("artist") == "" or self.current_song.get("artist") != info.artist):
+                    if display_lyrics and (
+                        (self.current_song.get("title") == "" or self.current_song.get("title") != info.title)
+                        or (self.current_song.get("artist") == "" or self.current_song.get("artist") != info.artist)
+                    ):
                         self.current_song = {"title": info.title, "artist": info.artist, "album": info.album_title}
                         self.fetch_lyrics(info.title, info.artist, info.album_title)
                     if display_lyrics and self.lyrics is not None:
