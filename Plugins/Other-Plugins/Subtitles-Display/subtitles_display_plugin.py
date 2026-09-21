@@ -1,6 +1,6 @@
 # ============================================================
 # Subtitles Display Plugin for Whispering Tiger
-# V1.0.11
+# V1.0.13
 # See https://github.com/Sharrnah/whispering-ui
 # ============================================================
 #
@@ -13,6 +13,7 @@ from collections import deque
 
 
 class SubtitleDisplayPlugin(Plugins.Base):
+    supports_stable_streaming = True
     root = None
     label = None
     tkinter_thread = None
@@ -40,7 +41,11 @@ class SubtitleDisplayPlugin(Plugins.Base):
                 return
             try:
                 text = self.update_queue.get_nowait()
-                self.label.config(text=text)
+                stable = bool(getattr(self, "_stable_captions", {}))
+                self.label.config(text=text, justify="left" if stable else "center",
+                                  anchor="nw" if stable else "center", height=0)
+                self.canvas.itemconfigure(self.canvas_label_id,
+                                          width=int(self.get_plugin_setting("window_width")) - 20 if stable else 0)
 
                 # change window height according to text.
                 self.root.update_idletasks()
@@ -173,6 +178,7 @@ class SubtitleDisplayPlugin(Plugins.Base):
                 "transcription_display_source_transcript": False,
                 "reverse_order_transcriptions": True,
                 "extra_intermediate_line": True,
+                "streaming_max_characters": {"type": "slider", "min": 100, "max": 2000, "step": 50, "value": 500},
 
                 # Position
                 "top": 30,
@@ -191,7 +197,7 @@ class SubtitleDisplayPlugin(Plugins.Base):
                 "opacity": {"type": "slider", "min": -0.01, "max": 1.0, "step": 0.01, "value": -0.01},
             },
             settings_groups={
-                "General": ["transcription_keep_last", "transcription_limit", "transcription_display_time", "transcription_display_source_transcript", "reverse_order_transcriptions", "extra_intermediate_line"],
+                "General": ["transcription_keep_last", "transcription_limit", "transcription_display_time", "transcription_display_source_transcript", "reverse_order_transcriptions", "extra_intermediate_line", "streaming_max_characters"],
                 "Position": ["top", "bottom", "window_width", "window_height", "x_position", "y_position"],
                 "Styling": ["square_size", "font_size", "font_color", "transparency_color", "font_background_color", "opacity"],
             }
@@ -226,6 +232,8 @@ class SubtitleDisplayPlugin(Plugins.Base):
         display_list = list(self.transcriptions)
         if self.current_intermediate_transcription:
             display_list.append(self.current_intermediate_transcription)
+        display_list.extend(getattr(self, "_stream_intermediates", {}).values())
+        display_list.extend(getattr(self, "_stable_captions", {}).values())
 
         # Rotate transcriptions so that the last one (intermediate text) is displayed first
         if self.get_plugin_setting("reverse_order_transcriptions"):
@@ -235,12 +243,63 @@ class SubtitleDisplayPlugin(Plugins.Base):
         updated_text = "\n".join(display_list)
         self.update_queue.put(updated_text)
 
-    def update_label(self, result_obj, is_final=False):
-        original_text = result_obj["text"]
-        if not self.get_plugin_setting("transcription_display_source_transcript") and "txt_translation" in result_obj and result_obj["txt_translation"] != "":
-            translated_text = result_obj["txt_translation"]
+    def _select_display_text(self, pipeline_text, result_obj):
+        original_text = str(result_obj.get("text") or "")
+        translated_text = str(result_obj.get("txt_translation") or "").strip()
+        source_id = str(result_obj.get("audio_source_id") or "main")
+
+        # Additional audio routes explicitly choose whether their result goes
+        # through text translation. Honor the text passed through that route's
+        # output pipeline. The legacy plugin preference continues to control
+        # the main microphone so existing profiles keep their old behavior.
+        if source_id != "main":
+            route_text = str(pipeline_text or "").strip()
+            return route_text or translated_text or original_text
+
+        if not self.get_plugin_setting("transcription_display_source_transcript") and translated_text:
+            return translated_text
+        return original_text
+
+    def streaming_caption_text(self, text, result_obj):
+        return self._select_display_text(text, result_obj)
+
+    def stt_caption(self, text, result_obj):
+        if not self.is_enabled(False):
+            return
+        if not hasattr(self, "_stable_captions"):
+            self._stable_captions = {}
+        source = str(result_obj.get("audio_source_id") or "main")
+        getattr(self, "_stream_intermediates", {}).pop(source, None)
+        if result_obj.get("display_done"):
+            self._stable_captions.pop(source, None)
         else:
-            translated_text = original_text
+            self._stable_captions[source] = text
+        self.update_intermediate_label_text()
+
+    def update_label(self, pipeline_text, result_obj, is_final=False):
+        translated_text = self._select_display_text(pipeline_text, result_obj)
+
+        if result_obj.get("streaming") and result_obj.get("display_mode") == "blocks":
+            return
+        if result_obj.get("streaming"):
+            from streaming_text import StreamRevisionTracker, rolling_text
+            if not hasattr(self, "_stream_revisions"):
+                self._stream_revisions = StreamRevisionTracker()
+                self._stream_intermediates = {}
+            if not self._stream_revisions.accept(result_obj):
+                return
+            source_id = str(result_obj.get("audio_source_id") or "main")
+            getattr(self, "_stable_captions", {}).pop(source_id, None)
+            translated_text = rolling_text(translated_text, self.get_plugin_setting("streaming_max_characters", 500))
+            if is_final:
+                self._stream_intermediates.pop(source_id, None)
+                if translated_text:
+                    self.transcriptions.append(translated_text)
+                    self.transcription_times[translated_text] = time.time()
+            else:
+                self._stream_intermediates[source_id] = translated_text
+            self.update_intermediate_label_text()
+            return
 
         # If this is a final transcription, add to transcriptions and reset intermediate text
         if is_final or (not is_final and not self.get_plugin_setting("extra_intermediate_line")):
@@ -254,13 +313,13 @@ class SubtitleDisplayPlugin(Plugins.Base):
         self.update_intermediate_label_text()
 
     def stt(self, text, result_obj):
-        if self.is_enabled(False) and text.strip() != "":
-            self.update_label(result_obj, is_final=True)
+        if self.is_enabled(False) and (text.strip() != "" or result_obj.get("streaming")):
+            self.update_label(text, result_obj, is_final=True)
         return
 
     def stt_intermediate(self, text, result_obj):
         if self.is_enabled(False) and text.strip() != "":
-            self.update_label(result_obj, is_final=False)
+            self.update_label(text, result_obj, is_final=False)
         return
 
     def on_enable(self):

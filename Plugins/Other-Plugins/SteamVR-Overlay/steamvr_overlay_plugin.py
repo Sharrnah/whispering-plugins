@@ -1,6 +1,6 @@
 # ============================================================
 # SteamVR text overlay plugin for Whispering Tiger
-# Version 1.0.0
+# Version 1.0.1
 #
 # Displays final and optionally intermediate speech-to-text results in a
 # SteamVR overlay. The OpenVR Python binding is downloaded into this plugin's
@@ -154,6 +154,7 @@ def render_overlay_image(
     background_opacity=0.72,
     alignment="center",
     outline=True,
+    top_aligned=False,
 ):
     """Render a fixed-size RGBA texture suitable for IVROverlay.setOverlayRaw."""
     width = max(128, int(width))
@@ -200,7 +201,7 @@ def render_overlay_image(
         )
 
     total_height = len(lines) * line_height + max(0, len(lines) - 1) * line_spacing
-    y_position = max(padding, (height - total_height) / 2)
+    y_position = padding if top_aligned else max(padding, (height - total_height) / 2)
     alignment = alignment if alignment in ("left", "center", "right") else "center"
 
     for line in lines:
@@ -261,6 +262,9 @@ def make_openvr_transform(openvr_module, x, y, distance, pitch, yaw, roll):
 
 
 class SteamVROverlayPlugin(Plugins.Base):
+    supports_stable_streaming = True
+    # Safe to load in the local integration process without an AI backend.
+    plugin_host_supported = True
     def __plugin_init__(self):
         self._state_lock = threading.RLock()
         self._dependency_lock = threading.Lock()
@@ -275,6 +279,9 @@ class SteamVROverlayPlugin(Plugins.Base):
         self._owns_openvr_session = False
         self._force_reconnect = False
 
+        self._stream_revisions = None
+        self._stream_intermediates = {}
+        self._stable_captions = {}
         self._history = deque()
         self._intermediate = None
         self._preview_text = None
@@ -541,6 +548,12 @@ class SteamVROverlayPlugin(Plugins.Base):
     def stt(self, text, result_obj):
         if not self.is_enabled(False):
             return
+        if result_obj.get("streaming") and result_obj.get("display_mode") == "blocks":
+            if self.get_plugin_setting("show_intermediate", True):
+                return
+        elif result_obj.get("streaming"):
+            self._update_stream(text, result_obj, True)
+            return
         source, translation = self._extract_texts(text, result_obj)
         if not source and not translation:
             return
@@ -558,12 +571,56 @@ class SteamVROverlayPlugin(Plugins.Base):
             "show_intermediate", True
         ):
             return
+        if result_obj.get("streaming") and result_obj.get("display_mode") == "blocks":
+            return
+        if result_obj.get("streaming"):
+            self._update_stream(text, result_obj, False)
+            return
         source, translation = self._extract_texts(text, result_obj)
         if not source and not translation:
             return
 
         with self._state_lock:
             self._intermediate = (source, translation)
+            self._preview_text = None
+            self._revision += 1
+        self._wake_event.set()
+
+    def streaming_caption_text(self, text, result_obj):
+        source, translation = self._extract_texts(text, result_obj)
+        return self._format_entry(source, translation)
+
+    def stt_caption(self, text, result_obj):
+        if not self.is_enabled(False):
+            return
+        source = str(result_obj.get("audio_source_id") or "main")
+        with self._state_lock:
+            self._stream_intermediates.pop(source, None)
+            if result_obj.get("display_done") or not self.get_plugin_setting("show_intermediate", True):
+                self._stable_captions.pop(source, None)
+            else:
+                self._stable_captions[source] = text
+            self._preview_text = None
+            self._revision += 1
+        self._wake_event.set()
+
+    def _update_stream(self, text, result_obj, final):
+        from streaming_text import StreamRevisionTracker
+        source, translation = self._extract_texts(text, result_obj)
+        with self._state_lock:
+            if self._stream_revisions is None:
+                self._stream_revisions = StreamRevisionTracker()
+            if not self._stream_revisions.accept(result_obj):
+                return
+            source_id = str(result_obj.get("audio_source_id") or "main")
+            self._stable_captions.pop(source_id, None)
+            if final:
+                self._stream_intermediates.pop(source_id, None)
+                if source or translation:
+                    self._history.append((source, translation))
+                    self._trim_history_locked()
+            else:
+                self._stream_intermediates[source_id] = (source, translation)
             self._preview_text = None
             self._revision += 1
         self._wake_event.set()
@@ -600,6 +657,8 @@ class SteamVROverlayPlugin(Plugins.Base):
             entries = list(self._history)
             if self._intermediate is not None:
                 entries.append(self._intermediate)
+            if self.get_plugin_setting("show_intermediate", True):
+                entries.extend(self._stream_intermediates.values())
             output = "\n\n".join(
                 formatted
                 for formatted in (
@@ -608,6 +667,9 @@ class SteamVROverlayPlugin(Plugins.Base):
                 )
                 if formatted
             )
+
+        if self._preview_text is None and self.get_plugin_setting("show_intermediate", True) and self._stable_captions:
+            output = "\n\n".join(self._stable_captions.values())
 
         maximum = _clamp(
             _as_int(self.get_plugin_setting("max_characters", 1600), 1600),
@@ -621,6 +683,8 @@ class SteamVROverlayPlugin(Plugins.Base):
     def clear_overlay(self):
         with self._state_lock:
             self._history.clear()
+            self._stream_intermediates.clear()
+            self._stable_captions.clear()
             self._intermediate = None
             self._preview_text = None
             self._revision += 1
@@ -831,6 +895,7 @@ class SteamVROverlayPlugin(Plugins.Base):
                     return
                 revision = self._revision
                 display_text = self._current_display_text_locked()
+                stable_caption = bool(self._stable_captions)
 
             if not self._poll_runtime_events(openvr_module):
                 return
@@ -856,7 +921,8 @@ class SteamVROverlayPlugin(Plugins.Base):
                         text_color=configuration["text_color"],
                         background_color=configuration["background_color"],
                         background_opacity=configuration["background_opacity"],
-                        alignment=configuration["text_alignment"],
+                        alignment="left" if stable_caption else configuration["text_alignment"],
+                        top_aligned=stable_caption,
                         outline=configuration["text_outline"],
                     )
                     self._set_overlay_image(image)

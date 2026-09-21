@@ -1,6 +1,6 @@
 # ============================================================
 # RVC Speech to Speech Plugin for Whispering Tiger
-# V1.2.2
+# V1.2.3
 # RVC WebUI: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 # Whispering Tiger: https://github.com/Sharrnah/whispering-ui
 # ============================================================
@@ -1011,6 +1011,13 @@ class RVCStsPlugin(Plugins.Base):
                     if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["STS_RT"] and self.model_file_valid(self.get_plugin_setting("model_file")):
                         self.start_vc()
                     pass
+
+    def is_plugin_tts_after_audio_active(self):
+        return bool(
+            self.is_enabled(False)
+            and self.get_plugin_setting("voice_change_source") == CONSTANTS["TTS"]
+            and self.model_file_valid(self.get_plugin_setting("model_file"))
+        )
 
     def on_plugin_tts_after_audio_call(self, data_obj):
         if self.is_enabled(False) and self.get_plugin_setting("voice_change_source") == CONSTANTS["TTS"] and self.model_file_valid(self.get_plugin_setting("model_file")):
